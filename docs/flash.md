@@ -22,6 +22,8 @@ The ESP32-S2 and ESP8266 have no Bluetooth, so they cannot run this firmware.
 
 The [install page](https://cheerlights.github.io/cheerlights-esp32-ble/) picks the file for your chip, flashes it, and then sets the board up, in Chrome or Edge on a computer.
 Plug the board in, click Install firmware, and choose its port.
+When it asks whether to erase the device, leave Erase device unticked to keep the board's settings.
+Erasing clears them, and the board lights nothing until it is set up again in step 2 of the page.
 
 ## In Espressif's web flasher
 
