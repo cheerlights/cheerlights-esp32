@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set up a CheerLights light</title>
+  <meta name="description" content="Flash the CheerLights Bluetooth firmware onto an ESP32 board and tell it where its LEDs are, in the browser.">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="favicon-32.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="home" href="https://cheerlights.com">
+      <picture>
+        <source srcset="cheerlights-logo-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="cheerlights-logo.svg" alt="CheerLights" width="168" height="40">
+      </picture>
+    </a>
+  </header>
+
+  <main>
+    <h1>Set up a CheerLights light</h1>
+    <p class="lead">Put the CheerLights Bluetooth firmware on an ESP32 board and tell it where its LEDs are. Then the CheerLights app for Android sends it the color everyone is sharing.</p>
+    <p id="browser-note" class="note" hidden>This page needs to talk to USB devices, which only Chrome and Edge on a computer can do. Open it there to continue.</p>
+    <p class="needs">You need a board with an ESP32, ESP32-S3, C3, C5, C6, or H2 chip, and a USB cable that carries data.</p>
+
+    <section id="step-install" class="step">
+      <h2>1. Install the firmware</h2>
+      <p>Plug the board into this computer, click Install, and pick its port. The installer picks the right file for your board's chip.</p>
+      <esp-web-install-button id="install" manifest="manifest.json">
+        <button slot="activate" class="primary">Install firmware <span id="version"></span></button>
+        <span slot="unsupported" class="note">This browser cannot install firmware. Use Chrome or Edge on a computer.</span>
+        <span slot="not-allowed" class="note">The installer needs this page to be served over HTTPS.</span>
+      </esp-web-install-button>
+      <p class="small">If the board does not show up, hold its BOOT button while you plug it in. Already installed? Go on to step 2.</p>
+    </section>
+
+    <section id="step-connect" class="step">
+      <h2>2. Connect to the board</h2>
+      <p>The page talks to the board over the same USB cable to set it up. Nothing is sent anywhere else.</p>
+      <button id="connect" class="primary">Connect</button>
+      <p id="connect-status" class="status" role="status"></p>
+    </section>
+
+    <section id="step-setup" class="step" hidden>
+      <h2>3. Tell it what is connected</h2>
+      <p>Pick your board if it is in the list. Otherwise choose what you wired up and the page will help you find it.</p>
+      <fieldset id="choices" class="choices">
+        <legend class="visually-hidden">What is connected</legend>
+        <div id="preset-list"></div>
+        <label class="choice">
+          <input type="radio" name="choice" value="pixels">
+          <span><strong>Something else, with addressable LEDs</strong>
+          <span class="hint">A strip, ring, or matrix of WS2812, SK6812, or WS2811 LEDs on one data pin</span></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="choice" value="rgb">
+          <span><strong>A plain RGB LED</strong>
+          <span class="hint">One LED with four legs, on three pins through resistors</span></span>
+        </label>
+      </fieldset>
+
+      <div id="preset-panel" class="panel" hidden>
+        <p id="preset-note"></p>
+        <button id="save-preset" class="primary">Set up this board</button>
+      </div>
+
+      <div id="pixels-panel" class="panel" hidden>
+        <div class="field">
+          <label for="count">How many LEDs?</label>
+          <input id="count" type="number" min="1" max="512" value="8" inputmode="numeric" aria-describedby="count-hint">
+          <p id="count-hint" class="hint">Up to 512. A close guess is fine for now.</p>
+        </div>
+
+        <div class="field">
+          <h3>Which pin are they on?</h3>
+          <p>The page lights each free pin for you, one at a time, in dim white. Say when your LEDs light up.</p>
+          <div class="row">
+            <button id="find-start">Find my LEDs</button>
+            <label class="inline" for="pin">or pick the pin
+              <select id="pin"><option value="">GPIO</option></select>
+            </label>
+          </div>
+          <div id="find-ask" class="ask" hidden>
+            <p id="find-question" aria-live="polite"></p>
+            <div class="row">
+              <button id="find-yes" class="primary">Yes, they are lit</button>
+              <button id="find-no">No, try the next pin</button>
+            </div>
+          </div>
+          <p id="pin-result" class="status" role="status"></p>
+        </div>
+
+        <div id="order-field" class="field" hidden>
+          <h3>Which color do they show?</h3>
+          <p>Different LEDs take red, green, and blue in different orders. The page sends one color and asks what you see.</p>
+          <div id="order-ask" class="ask">
+            <p id="order-question" aria-live="polite"></p>
+            <div class="row swatches">
+              <button data-seen="r"><span class="swatch red" aria-hidden="true"></span>Red</button>
+              <button data-seen="g"><span class="swatch green" aria-hidden="true"></span>Green</button>
+              <button data-seen="b"><span class="swatch blue" aria-hidden="true"></span>Blue</button>
+            </div>
+          </div>
+          <p id="order-result" class="status" role="status"></p>
+          <button id="order-again" hidden>Ask again</button>
+        </div>
+
+        <div id="shape-field" class="field" hidden>
+          <h3>Shape</h3>
+          <label class="check"><input id="is-grid" type="checkbox"> The LEDs are a grid, such as an 8x8 matrix</label>
+          <div id="grid-fields" class="row" hidden>
+            <label class="inline" for="width">LEDs per row <input id="width" type="number" min="2" max="512" value="8" inputmode="numeric"></label>
+            <label class="check"><input id="serpentine" type="checkbox"> Rows zigzag (each row starts where the last ended)</label>
+          </div>
+        </div>
+      </div>
+
+      <div id="rgb-panel" class="panel" hidden>
+        <div class="row">
+          <label class="inline" for="red-pin">Red <select id="red-pin"></select></label>
+          <label class="inline" for="green-pin">Green <select id="green-pin"></select></label>
+          <label class="inline" for="blue-pin">Blue <select id="blue-pin"></select></label>
+        </div>
+        <label class="check"><input id="anode" type="checkbox"> Common anode (the long leg goes to 3.3 V, not ground)</label>
+      </div>
+
+      <div id="common-panel" class="panel" hidden>
+        <div class="field">
+          <label for="max">Brightness cap</label>
+          <input id="max" type="number" min="1" max="255" value="64" inputmode="numeric" aria-describedby="max-hint">
+          <p id="max-hint" class="hint">1 to 255: the brightest the phone can make it. Each LED can draw 60 mA at full white, so keep it low for a long strip on USB power.</p>
+        </div>
+        <div class="field">
+          <label for="button-pin">Off button</label>
+          <select id="button-pin" aria-describedby="button-hint"><option value="none">No button</option></select>
+          <p id="button-hint" class="hint">A button from a pin to ground that turns the light off and on.</p>
+        </div>
+        <button id="save-custom" class="primary" disabled>Save and restart</button>
+        <p id="custom-why" class="hint"></p>
+      </div>
+      <p id="setup-status" class="status" role="status"></p>
+    </section>
+
+    <section id="step-app" class="step" hidden>
+      <h2>4. Connect from the app</h2>
+      <p>Open the CheerLights app, go to Wearable, tap Find, and choose <strong id="device-name">your board</strong>.</p>
+      <p id="live" class="live" hidden><span id="live-swatch" class="swatch big" aria-hidden="true"></span><span id="live-text"></span></p>
+      <p class="small">To change the setup later, come back to this page and connect again, or forget the settings and start over.</p>
+      <button id="forget">Forget its settings</button>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Firmware and source: <a href="https://github.com/cheerlights/cheerlights-esp32-ble">cheerlights/cheerlights-esp32-ble</a>. Prefer a terminal? See <a href="https://github.com/cheerlights/cheerlights-esp32-ble/blob/main/docs/configure.md">Set up your board</a>.</p>
+  </footer>
+</body>
+</html>

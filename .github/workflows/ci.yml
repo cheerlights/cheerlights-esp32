@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - name: Native tests
+        run: pio test -e native
+      - name: Build every chip
+        run: pio run -e esp32 -e esp32s3 -e esp32c3 -e esp32c5 -e esp32c6 -e esp32h2
+      - name: Check each image's partition table
+        run: python tools/check_images.py
+      - name: Build the install page
+        run: node --check installer/app.js && python tools/build_site.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: release/*.bin

@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "frame": [
+    {
+      "name": "orange, fresh",
+      "stale": false,
+      "paletteIndex": 9,
+      "rgb": "ffa500",
+      "sequence": 513,
+      "ageMinutes": 0,
+      "bytes": "1009ffa5000102000000"
+    },
+    {
+      "name": "green, stale after 90 minutes",
+      "stale": true,
+      "paletteIndex": 1,
+      "rgb": "008000",
+      "sequence": 1,
+      "ageMinutes": 90,
+      "bytes": "110100800001005a0000"
+    },
+    {
+      "name": "off-palette color, maximum counters",
+      "stale": false,
+      "paletteIndex": 255,
+      "rgb": "123456",
+      "sequence": 65535,
+      "ageMinutes": 65535,
+      "bytes": "10ff123456ffffffff00"
+    }
+  ],
+  "frameNewer": [
+    {
+      "name": "orange from a newer phone, two bytes longer",
+      "stale": false,
+      "paletteIndex": 9,
+      "rgb": "ffa500",
+      "sequence": 513,
+      "ageMinutes": 0,
+      "bytes": "1009ffa5000102000000abcd"
+    }
+  ],
+  "info": [
+    {
+      "name": "firmware 0.1.0 with display and off control",
+      "protocol": 1,
+      "firmware": "0.1.0",
+      "display": true,
+      "offControl": true,
+      "bytes": "0100010003"
+    },
+    {
+      "name": "firmware 0.2.0 with display, off control, and light",
+      "protocol": 1,
+      "firmware": "0.2.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "bytes": "0100020007"
+    }
+  ],
+  "infoNewer": [
+    {
+      "name": "a newer firmware with a capability bit this reader does not know, one byte longer",
+      "protocol": 1,
+      "firmware": "0.9.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "bytes": "010009000f2a"
+    }
+  ],
+  "bluefruit": [
+    {
+      "name": "orange",
+      "rgb": "ffa500",
+      "bytes": "2143ffa500f7"
+    }
+  ],
+  "light": [
+    {
+      "name": "full brightness, solid, middle speed",
+      "brightness": 255,
+      "effect": 0,
+      "speed": 128,
+      "bytes": "01ff0080"
+    },
+    {
+      "name": "dim breathe, slowest",
+      "brightness": 1,
+      "effect": 1,
+      "speed": 1,
+      "bytes": "01010101"
+    }
+  ],
+  "lightNewer": [
+    {
+      "name": "dim breathe from a newer phone, one byte longer",
+      "brightness": 1,
+      "effect": 1,
+      "speed": 1,
+      "bytes": "0101010107"
+    }
+  ],
+  "lightRejected": [
+    {
+      "name": "too short",
+      "bytes": "01ff00"
+    },
+    {
+      "name": "unknown version",
+      "bytes": "02ff0080"
+    }
+  ],
+  "lightClamped": [
+    {
+      "name": "zero brightness and speed read as 1",
+      "bytes": "01000300",
+      "brightness": 1,
+      "effect": 3,
+      "speed": 1
+    }
+  ],
+  "effects": [
+    {
+      "name": "firmware 0.3.0",
+      "entries": [
+        {
+          "id": 0,
+          "flags": 1,
+          "name": "Solid"
+        },
+        {
+          "id": 1,
+          "flags": 1,
+          "name": "Breathe"
+        },
+        {
+          "id": 2,
+          "flags": 1,
+          "name": "Sparkle"
+        },
+        {
+          "id": 3,
+          "flags": 1,
+          "name": "Ripple"
+        },
+        {
+          "id": 4,
+          "flags": 0,
+          "name": "Rainbow"
+        }
+      ],
+      "bytes": "030508000105536f6c69640a010107427265617468650a020107537061726b6c6509030106526970706c650a0400075261696e626f77"
+    }
+  ],
+  "effectsNewer": [
+    {
+      "name": "a newer firmware: a flag bit this reader does not know, an entry two bytes longer, and a byte after the list",
+      "entries": [
+        {
+          "id": 0,
+          "flags": 1,
+          "name": "Solid"
+        },
+        {
+          "id": 9,
+          "flags": 129,
+          "name": "Glitter"
+        }
+      ],
+      "bytes": "030208000105536f6c69640c098107476c6974746572aabbff"
+    }
+  ]
+}

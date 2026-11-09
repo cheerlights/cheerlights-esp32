@@ -1,0 +1,6 @@
+# One app, a crash dump, and the settings store, in 4 MB of flash.
+# The release image runs from 0x0 to the end of the app, so writing a newer one leaves the settings alone.
+# Name,   Type, SubType,  Offset,   Size
+factory,  app,  factory,  0x10000,  0x3D0000
+coredump, data, coredump, 0x3E0000, 0x10000
+nvs,      data, nvs,      0x3F0000, 0x10000

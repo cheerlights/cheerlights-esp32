@@ -1,0 +1,47 @@
+name: Install page
+
+# Publishing a release puts the install page on GitHub Pages with that release's images,
+# so the page always flashes the newest published firmware.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - name: Download the release images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
+          mkdir images
+          gh release download "$tag" --dir images --pattern '*.bin' --pattern SHA256SUMS.txt
+          cd images && sha256sum --check SHA256SUMS.txt
+      - name: Check each image's partition table
+        run: mkdir -p release && cp images/*.bin release/ && python tools/check_images.py
+      - name: Build the site
+        run: python tools/build_site.py --images images
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

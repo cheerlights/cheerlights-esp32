@@ -1,0 +1,35 @@
+name: Release
+
+# Push a tag such as v0.3.0 to build every chip and publish the images as a draft release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - name: Check the tag matches the firmware version
+        run: |
+          version=$(grep -oP 'FW_MAJOR = \K\d+, FW_MINOR = \d+, FW_PATCH = \d+' src/main.cpp | tr -d ' ' | sed 's/,FW_MINOR=/./;s/,FW_PATCH=/./')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match firmware $version"; exit 1; }
+      - name: Native tests
+        run: pio test -e native
+      - name: Build every chip
+        run: pio run -e esp32 -e esp32s3 -e esp32c3 -e esp32c5 -e esp32c6 -e esp32h2
+      - name: Check each image's partition table
+        run: python tools/check_images.py
+      - name: Checksums
+        run: cd release && sha256sum *.bin > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/*.bin release/SHA256SUMS.txt --draft --title "$GITHUB_REF_NAME" --generate-notes

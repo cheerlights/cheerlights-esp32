@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "source": "Live feed, ThingSpeak channel 1417; 24,000 entries checked 2026-11-02",
+  "colors": [
+    { "index": 0, "name": "red", "hex": "#ff0000", "text": "black" },
+    { "index": 1, "name": "green", "hex": "#008000", "text": "white" },
+    { "index": 2, "name": "blue", "hex": "#0000ff", "text": "white" },
+    { "index": 3, "name": "cyan", "hex": "#00ffff", "text": "black" },
+    { "index": 4, "name": "white", "hex": "#ffffff", "text": "black" },
+    { "index": 5, "name": "oldlace", "hex": "#fdf5e6", "text": "black" },
+    { "index": 6, "name": "purple", "hex": "#800080", "text": "white" },
+    { "index": 7, "name": "magenta", "hex": "#ff00ff", "text": "black" },
+    { "index": 8, "name": "yellow", "hex": "#ffff00", "text": "black" },
+    { "index": 9, "name": "orange", "hex": "#ffa500", "text": "black" },
+    { "index": 10, "name": "pink", "hex": "#ffc0cb", "text": "black" }
+  ]
+}

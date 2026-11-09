@@ -1,0 +1,6 @@
+.pio/
+release/
+test/test_profile/vectors.h
+__pycache__/
+.vscode/
+site/
