@@ -94,6 +94,11 @@ bool decodeSettings(const uint8_t* data, size_t length, Settings& out);
 const char* orderName(ColorOrder order);
 void describe(const Settings& s, char* out, size_t size);
 
+// The settings as console commands on one line, separated by "; ", or "none" when not set up.
+// Sending each command and then save sets up a fresh board the same way, so the install page can
+// keep a copy and put it back after the board is erased.
+void exportCommands(const Settings& s, char* out, size_t size);
+
 // A test color on a pin, shown until the next test or `test off` and never saved, so a person or the
 // install page can find which pin the LEDs are on and which color order they take.
 // The color goes out in the order given, R first, so a red that shows green means the LEDs take green first.

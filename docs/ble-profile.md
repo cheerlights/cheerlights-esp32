@@ -34,6 +34,9 @@ This firmware names itself `CL-` and four hex digits from its address, such as `
 `Info` is byte 0 protocol version, bytes 1 to 3 firmware major, minor, and patch, and byte 4 capability flags.
 Flag bit 0 means the light has a display, bit 1 means it has a physical off control, and bit 2 means it has `Light` and `Effects`.
 A phone shows brightness and effect controls only when bit 2 is set, so a light without them still works with every phone.
+Bit 3 means the light is not set up: it does not know where its LEDs are, so it shows nothing.
+A phone that sees bit 3 tells its owner to set the light up over USB, on the [install page](https://cheerlights.github.io/cheerlights-esp32-ble/).
+Firmware before 0.4.0 never sets bit 3.
 
 ## Frame
 

@@ -154,8 +154,8 @@ async def full_test(port):
             r.check("Info is read only", sorted(service.get_characteristic(INFO).properties) == ["read"])
 
             info = await client.read_gatt_char(INFO)
-            r.check("Info is 5 bytes: protocol 1, fw 0.3.0, display, off control, and light",
-                    bytes(info) == bytes([1, 0, 3, 0, 7]), bytes(info).hex())
+            r.check("Info is 5 bytes: protocol 1, fw 0.4.0, display, off control, and light, set up",
+                    bytes(info) == bytes([1, 0, 4, 0, 7]), bytes(info).hex())
 
             r.check("Light is read, write, and write without response",
                     {"read", "write", "write-without-response"} <= set(service.get_characteristic(LIGHT).properties))

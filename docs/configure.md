@@ -11,6 +11,16 @@ The [install page](https://cheerlights.github.io/cheerlights-esp32-ble/) works i
 After it installs the firmware, click Connect, and it lists the presets for your board's chip.
 For anything else, it lights each free pin in turn until you say your LEDs are lit, then shows two test colors to work out their color order.
 
+The page keeps a copy of each board's setup in the browser, under the board's Bluetooth name.
+If the board is erased, for example by ticking Erase device during an install, connecting it on the same browser offers to put that setup back.
+
+## When the app says a light is not set up
+
+A board that is not set up still connects to the CheerLights app, but it lights nothing, so the app says it needs setting up.
+That happens after the first flash, after `reset`, and after an install that erased the board.
+Plug it into a computer, open the install page in Chrome or Edge, and click Connect.
+If this browser set the board up before, click Put its setup back; otherwise pick your board or wire-up again.
+
 ## Open the console
 
 Connect the board with a USB data cable and open a serial monitor at 115200 baud, with DTR and RTS off so the board does not reset.
@@ -106,6 +116,7 @@ The off choice survives a restart.
 |---|---|
 | `help` | The command list |
 | `show` | The settings in use, and changes waiting for save |
+| `export` | The settings in use as commands on one line, separated by `;`, or `none` |
 | `boards` | The presets for this chip |
 | `board <name>` | Start from a preset |
 | `pixels <pin> <count> [width]` | Addressable LEDs: a strip, or a grid with `width` LEDs per row |
@@ -123,6 +134,9 @@ The off choice survives a restart.
 | `test <pin> <count> <rrggbb>` | Light a color on the first `count` LEDs of a pin, without saving |
 | `test off` | End the test and go back to the settings in use |
 | `about` | The chip, the firmware version, the Bluetooth name, and whether it is set up |
+
+`export` prints a line such as `export pixels 14 64 8; order rgb; serpentine on; max 16; button 0`.
+Typing each of those commands, then `save`, sets up another board of the same kind the same way.
 
 The limit is 512 addressable LEDs.
 The console refuses pins the chip uses for flash, PSRAM, its USB port, or the serial console, and pins that are input-only.

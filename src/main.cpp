@@ -26,8 +26,7 @@ constexpr const char* INFO_UUID = "3554cfbc-0bcc-47f2-9af2-3b313c97a59d";
 constexpr const char* LIGHT_UUID = "0a8345b7-afa9-47df-9d63-e98130514e19";
 constexpr const char* EFFECTS_UUID = "c4fa31c4-e81e-49d2-be0c-530c01865776";
 
-constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 3, FW_PATCH = 0;
-constexpr uint8_t CAP_DISPLAY = 0x01, CAP_OFF_CONTROL = 0x02, CAP_LIGHT = 0x04;
+constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 4, FW_PATCH = 0;
 
 constexpr uint32_t FRAME_INTERVAL_MS = 20;  // 50 frames a second while an effect moves
 constexpr uint32_t SAVE_DELAY_MS = 2000;    // a slider writes many values; flash gets the last one
@@ -204,11 +203,11 @@ void startBle() {
   color->setValue(empty, FRAME_SIZE);
   color->setCallbacks(&colorCallbacks);
 
-  uint8_t caps = CAP_LIGHT;
-  if (settings.output != Output::None) caps |= CAP_DISPLAY;
-  if (settings.buttonPin >= 0) caps |= CAP_OFF_CONTROL;
+  // A light that is not set up still connects, so the phone can tell its owner to set it up over USB.
+  const bool setUp = isSetUp(settings);
   NimBLECharacteristic* info = service->createCharacteristic(INFO_UUID, NIMBLE_PROPERTY::READ);
-  const uint8_t infoValue[5] = {PROTOCOL_VERSION, FW_MAJOR, FW_MINOR, FW_PATCH, caps};
+  uint8_t infoValue[INFO_SIZE];
+  encodeInfo({FW_MAJOR, FW_MINOR, FW_PATCH, setUp, settings.buttonPin >= 0, true, !setUp}, infoValue);
   info->setValue(infoValue, sizeof(infoValue));
 
   NimBLECharacteristic* light = service->createCharacteristic(

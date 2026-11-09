@@ -38,7 +38,7 @@
         <span slot="unsupported" class="note">This browser cannot install firmware. Use Chrome or Edge on a computer.</span>
         <span slot="not-allowed" class="note">The installer needs this page to be served over HTTPS.</span>
       </esp-web-install-button>
-      <p class="small">If the board does not show up, hold its BOOT button while you plug it in. Updating a board you already set up? Leave Erase device unticked, and it keeps its settings. Already installed? Go on to step 2.</p>
+      <p class="small">If the board does not show up, hold its BOOT button while you plug it in. Updating a board you already set up? Leave Erase device unticked, and it keeps its settings. When the install finishes, go on to step 2: the board stays dark until it is set up.</p>
     </section>
 
     <section id="step-connect" class="step">
@@ -50,6 +50,11 @@
 
     <section id="step-setup" class="step" hidden>
       <h2>3. Tell it what is connected</h2>
+      <div id="restore-panel" class="restore" hidden>
+        <p id="restore-note"></p>
+        <button id="restore" class="primary">Put its setup back</button>
+        <p class="hint">Or set it up fresh: choose what is connected to it below.</p>
+      </div>
       <p>Pick your board if it is in the list. Otherwise choose what you wired up and the page will help you find it.</p>
       <fieldset id="choices" class="choices">
         <legend class="visually-hidden">What is connected</legend>
@@ -152,7 +157,7 @@
       <h2>4. Connect from the app</h2>
       <p>Open the CheerLights app, go to Wearable, tap Find, and choose <strong id="device-name">your board</strong>.</p>
       <p id="live" class="live" hidden><span id="live-swatch" class="swatch big" aria-hidden="true"></span><span id="live-text"></span></p>
-      <p class="small">To change the setup later, come back to this page and connect again, or forget the settings and start over.</p>
+      <p class="small">To change the setup later, come back to this page and connect again, or forget the settings and start over. This browser keeps a copy of the setup, so if the board is ever erased, this page offers to put it back when you connect.</p>
       <button id="forget">Forget its settings</button>
     </section>
   </main>

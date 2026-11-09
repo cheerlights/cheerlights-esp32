@@ -55,6 +55,15 @@ void encodeLight(const Light& light, uint8_t out[LIGHT_SIZE]) {
   out[3] = light.speed == 0 ? 1 : light.speed;
 }
 
+void encodeInfo(const Info& info, uint8_t out[INFO_SIZE]) {
+  out[0] = PROTOCOL_VERSION;
+  out[1] = info.major;
+  out[2] = info.minor;
+  out[3] = info.patch;
+  out[4] = (info.display ? CAP_DISPLAY : 0) | (info.offControl ? CAP_OFF_CONTROL : 0) | (info.light ? CAP_LIGHT : 0) |
+           (info.needsSetup ? CAP_NEEDS_SETUP : 0);
+}
+
 const EffectInfo EFFECTS[] = {
     {EFFECT_SOLID, EFFECT_SHOWS_COLOR, "Solid"},     {EFFECT_BREATHE, EFFECT_SHOWS_COLOR, "Breathe"},
     {EFFECT_SPARKLE, EFFECT_SHOWS_COLOR, "Sparkle"}, {EFFECT_RIPPLE, EFFECT_SHOWS_COLOR, "Ripple"},

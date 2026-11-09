@@ -270,6 +270,30 @@ void describe(const Settings& s, char* out, size_t size) {
   }
 }
 
+void exportCommands(const Settings& s, char* out, size_t size) {
+  char light[64];
+  switch (s.output) {
+    case Output::Pixels:
+      snprintf(light, sizeof(light), "pixels %d %u %u; order %s; serpentine %s", s.pixelPin, s.count, s.width,
+               orderName(s.order), s.serpentine ? "on" : "off");
+      break;
+    case Output::Rgb:
+      snprintf(light, sizeof(light), "rgb %d %d %d; anode %s", s.redPin, s.greenPin, s.bluePin,
+               s.commonAnode ? "on" : "off");
+      break;
+    default:
+      snprintf(out, size, "none");
+      return;
+  }
+  char button[16];
+  if (s.buttonPin >= 0) {
+    snprintf(button, sizeof(button), "%d", s.buttonPin);
+  } else {
+    snprintf(button, sizeof(button), "none");
+  }
+  snprintf(out, size, "%s; max %u; button %s", light, s.maxBrightness, button);
+}
+
 namespace {
 
 constexpr int MAX_TOKENS = 6;
@@ -310,6 +334,7 @@ bool onOff(const char* word, bool& out) {
 const char HELP[] =
     "Commands (changes take effect on save):\n"
     "  show                     the settings in use, and changes waiting for save\n"
+    "  export                   the settings in use, as commands\n"
     "  boards                   presets for this chip\n"
     "  board <name>             start from a preset\n"
     "  pixels <pin> <count> [width]  addressable LEDs: a strip, or a grid with width LEDs per row\n"
@@ -388,6 +413,9 @@ Action handleCommand(const char* line, const char* chip, const Settings& running
       describe(staged, next, sizeof(next));
       snprintf(out, size, "In use: %s.\nWaiting for save: %s.", now, next);
     }
+  } else if (strcmp(cmd, "export") == 0 && n == 1) {
+    size_t at = static_cast<size_t>(snprintf(out, size, "export "));
+    if (at < size) exportCommands(running, out + at, size - at);
   } else if (strcmp(cmd, "boards") == 0) {
     size_t at = static_cast<size_t>(snprintf(out, size, "Presets for %s:", chip));
     for (size_t i = 0; i < PRESET_COUNT && at < size; i++) {

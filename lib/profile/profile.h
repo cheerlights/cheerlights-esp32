@@ -37,6 +37,19 @@ struct Shown {
 };
 Shown renderFrame(const Frame& frame);
 
+// The Info characteristic: protocol version, firmware version, and what this light has.
+constexpr size_t INFO_SIZE = 5;
+constexpr uint8_t CAP_DISPLAY = 0x01;      // it shows the color
+constexpr uint8_t CAP_OFF_CONTROL = 0x02;  // it has a physical off control
+constexpr uint8_t CAP_LIGHT = 0x04;        // it has Light and Effects
+constexpr uint8_t CAP_NEEDS_SETUP = 0x08;  // it is not set up, so it shows nothing until it is set up over USB
+
+struct Info {
+  uint8_t major, minor, patch;
+  bool display, offControl, light, needsSetup;
+};
+void encodeInfo(const Info& info, uint8_t out[INFO_SIZE]);
+
 // The Light characteristic: brightness, effect, and speed, written by the phone and kept across restarts.
 constexpr size_t LIGHT_SIZE = 4;
 constexpr uint8_t LIGHT_VERSION = 1;

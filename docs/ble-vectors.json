@@ -57,6 +57,26 @@
       "offControl": true,
       "light": true,
       "bytes": "0100020007"
+    },
+    {
+      "name": "firmware 0.4.0, set up, with display, off control, and light",
+      "protocol": 1,
+      "firmware": "0.4.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "needsSetup": false,
+      "bytes": "0100040007"
+    },
+    {
+      "name": "firmware 0.4.0, not set up yet",
+      "protocol": 1,
+      "firmware": "0.4.0",
+      "display": false,
+      "offControl": false,
+      "light": true,
+      "needsSetup": true,
+      "bytes": "010004000c"
     }
   ],
   "infoNewer": [
@@ -67,7 +87,7 @@
       "display": true,
       "offControl": true,
       "light": true,
-      "bytes": "010009000f2a"
+      "bytes": "01000900172a"
     }
   ],
   "bluefruit": [

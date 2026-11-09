@@ -109,6 +109,42 @@ const state = {
 // What the console answers to each settings command, good or bad, so log lines in between are skipped.
 const REPLY = /^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO|GPIO \d+ cannot|A row cannot|The order is|Each of the three|The RGB LED needs|Usage|Not a command)/;
 
+// Each board's setup, kept in this browser by its Bluetooth name, so a board erased by an install can be put back.
+const SAVED_PREFIX = "cheerlights-setup:";
+const SETUP_OK = /^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO)/;
+
+function savedSetup(name) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVED_PREFIX + name) || "null");
+    return saved && typeof saved.commands === "string" && typeof saved.chip === "string" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function keepSetup(name, setup) {
+  try {
+    if (setup) localStorage.setItem(SAVED_PREFIX + name, JSON.stringify(setup));
+    else localStorage.removeItem(SAVED_PREFIX + name);
+  } catch {
+    // Without storage the page still works; it just cannot put a setup back later.
+  }
+}
+
+// Asks a set-up board for its settings as commands and keeps them. Firmware before 0.4.0 has no export.
+async function rememberSetup() {
+  const board = state.board;
+  const line = await board.ask("export", /^export |^Not a command/, 2000).catch(() => null);
+  if (!line || !line.startsWith("export ") || line === "export none") return;
+  const shown = await board.ask("show", /^In use: /, 2000).catch(() => "");
+  keepSetup(state.about.name, {
+    chip: state.about.chip,
+    commands: line.slice("export ".length),
+    description: shown.replace(/^In use: /, "").replace(/\.$/, ""),
+    kept: new Date().toISOString(),
+  });
+}
+
 const CHIP_NAMES = { esp32: "ESP32", esp32s3: "ESP32-S3", esp32c3: "ESP32-C3", esp32c5: "ESP32-C5", esp32c6: "ESP32-C6", esp32h2: "ESP32-H2" };
 
 function setStatus(el, text, kind = "") {
@@ -149,19 +185,54 @@ async function connect() {
     for (let tries = 0; tries < 5 && !line; tries++) {
       line = await board.ask("about", /^about chip=/, 1500).catch(() => null);
     }
+    $("step-connect").classList.remove("next");
     if (!line) throw new Error("The board did not answer. Is the CheerLights firmware installed? Try step 1, then connect again.");
     state.about = parseAbout(line);
     const chip = CHIP_NAMES[state.about.chip] || state.about.chip;
     const setUp = state.about.setup === "saved";
+    const saved = setUp ? null : savedSetup(state.about.name);
+    const restorable = saved && saved.chip === state.about.chip ? saved : null;
     setStatus($("connect-status"),
-      `Connected to ${state.about.name}, an ${chip} running firmware ${state.about.fw}. ${setUp ? "It is set up already; you can change it below." : "It is not set up yet."}`,
+      `Connected to ${state.about.name}, an ${chip} running firmware ${state.about.fw}. ${setUp ? "It is set up already; you can change it below." : restorable ? "It is not set up, but this browser kept a copy of its last setup." : "It is not set up yet."}`,
       "ok");
     await loadChoices();
+    showRestore(restorable);
     $("step-setup").hidden = false;
-    if (setUp) showDone();
+    if (setUp) {
+      await rememberSetup();
+      showDone();
+    }
   } catch (e) {
     if (e.name === "NotFoundError") setStatus($("connect-status"), "No port chosen.");
     else setStatus($("connect-status"), e.message, "error");
+  } finally {
+    busy(button, false);
+  }
+}
+
+function showRestore(saved) {
+  $("restore-panel").hidden = !saved;
+  if (!saved) return;
+  $("restore-note").textContent = `Last time this browser saw ${state.about.name}, it had ${saved.description || saved.commands}.`;
+}
+
+// Sends the kept commands to a board that lost its setup, then saves.
+async function restore() {
+  const saved = savedSetup(state.about.name);
+  const button = $("restore");
+  if (!saved) return;
+  busy(button, true);
+  setStatus($("setup-status"), "Putting its setup back");
+  try {
+    for (const command of saved.commands.split(";").map((c) => c.trim()).filter(Boolean)) {
+      const reply = await state.board.ask(command, REPLY, 2000);
+      if (!SETUP_OK.test(reply)) throw new Error(`${reply} Choose what is connected below instead.`);
+    }
+    await save();
+    $("restore-panel").hidden = true;
+  } catch (e) {
+    await state.board.ask("cancel", /^Changes dropped/, 2000).catch(() => {});
+    setStatus($("setup-status"), e.message, "error");
   } finally {
     busy(button, false);
   }
@@ -271,6 +342,7 @@ async function save() {
   }
   const about = await board.ask("about", /^about chip=/, 4000);
   state.about = parseAbout(about);
+  await rememberSetup();
   setStatus($("setup-status"), "Set up. The board is ready.", "ok");
   showDone();
 }
@@ -404,7 +476,7 @@ async function saveCustom() {
     await stopTest();
     for (const command of commands) {
       const reply = await state.board.ask(command, REPLY, 2000);
-      if (!/^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO)/.test(reply)) throw new Error(reply);
+      if (!SETUP_OK.test(reply)) throw new Error(reply);
     }
     await save();
   } catch (e) {
@@ -428,6 +500,7 @@ async function forget() {
   try {
     await state.board.ask("reset", /^Settings forgotten/, 3000);
     await waitForRestart(state.board);
+    keepSetup(state.about.name, null);
     $("step-app").hidden = true;
     setStatus($("setup-status"), "Settings forgotten. Choose what is connected to set it up again.");
     state.about.setup = "none";
@@ -460,6 +533,15 @@ async function showLiveColor() {
   }
 }
 
+// After the installer closes, step 2 is the one thing left to do, and a board lights nothing until it is done.
+function nextStep() {
+  const step = $("step-connect");
+  step.classList.add("next");
+  setStatus($("connect-status"), "Next, click Connect. The board stays dark until it is set up.");
+  step.scrollIntoView({ behavior: "smooth", block: "start" });
+  $("connect").focus({ preventScroll: true });
+}
+
 function init() {
   if (!("serial" in navigator)) {
     $("browser-note").hidden = false;
@@ -469,14 +551,16 @@ function init() {
     if (v.trim()) $("version").textContent = v.trim();
   }).catch(() => {});
 
-  // The installer holds the port while it runs; connect afterwards.
-  $("install").addEventListener("closed", () => {
-    setStatus($("connect-status"), "Firmware installed. Click Connect to set it up.", "ok");
+  // The installer holds the port while it runs; connect afterwards. Its dialog is added to the body, not to the
+  // button, so its closed event is heard on the document.
+  document.addEventListener("closed", (e) => {
+    if (e.target?.localName === "ewt-install-dialog" && !state.board) nextStep();
   });
 
   $("connect").addEventListener("click", connect);
   $("choices").addEventListener("change", onChoice);
   $("save-preset").addEventListener("click", savePreset);
+  $("restore").addEventListener("click", restore);
   $("find-start").addEventListener("click", findStart);
   $("find-yes").addEventListener("click", () => findAnswer(true));
   $("find-no").addEventListener("click", () => findAnswer(false));

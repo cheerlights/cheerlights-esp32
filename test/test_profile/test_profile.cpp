@@ -96,6 +96,14 @@ static void test_stale_looks_different_from_fresh() {
   TEST_ASSERT_TRUE(stale.markersOff);
 }
 
+static void test_info_vectors_encode() {
+  for (const InfoVector& v : INFO_VECTORS) {
+    uint8_t out[INFO_SIZE];
+    encodeInfo({v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup}, out);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, out, INFO_SIZE, v.name);
+  }
+}
+
 static void test_light_vectors() {
   for (const LightVector& v : LIGHT_VECTORS) {
     Light l{};
@@ -223,6 +231,7 @@ int main() {
   RUN_TEST(test_unknown_flags_do_not_block_a_frame);
   RUN_TEST(test_fields_are_little_endian);
   RUN_TEST(test_stale_looks_different_from_fresh);
+  RUN_TEST(test_info_vectors_encode);
   RUN_TEST(test_light_vectors);
   RUN_TEST(test_light_round_trips);
   RUN_TEST(test_effects_list_matches_the_published_vector);

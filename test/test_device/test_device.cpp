@@ -1,4 +1,5 @@
 #include <device.h>
+#include <stdio.h>
 #include <string.h>
 #include <unity.h>
 
@@ -313,12 +314,54 @@ static void test_a_known_command_with_wrong_arguments_shows_its_usage() {
   TEST_ASSERT_EQUAL_STRING_LEN("Usage: board <name>", out, 19);
 }
 
+// Export, then each command sent to a fresh board, gives the same settings: what the install page relies on
+// to put a board back after it is erased.
+static void replay(const char* line, const char* chip, Settings& staged) {
+  const Settings fresh{};
+  char copy[200], out[300];
+  snprintf(copy, sizeof(copy), "%s", line);
+  for (char* command = strtok(copy, ";"); command != nullptr; command = strtok(nullptr, ";")) {
+    handleCommand(command, chip, fresh, staged, out, sizeof(out));
+    TEST_ASSERT_NULL_MESSAGE(strstr(out, "Usage"), command);
+    TEST_ASSERT_NULL_MESSAGE(strstr(out, "cannot"), command);
+    TEST_ASSERT_NULL_MESSAGE(strstr(out, "Not a command"), command);
+  }
+}
+
+static void test_export_replays_to_the_same_settings() {
+  char out[300];
+  for (size_t i = 0; i < PRESET_COUNT; i++) {
+    const Preset& p = PRESETS[i];
+    Settings staged{};
+    TEST_ASSERT_EQUAL(Action::None, handleCommand("export", p.chip, p.settings, staged, out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING_LEN_MESSAGE("export ", out, 7, p.name);
+    Settings rebuilt{};
+    replay(out + 7, p.chip, rebuilt);
+    TEST_ASSERT_TRUE_MESSAGE(rebuilt == p.settings, p.name);
+  }
+
+  // A wired-up strip, a serpentine grid, and an RGB LED with no button.
+  Settings custom{};
+  Settings staged{};
+  for (const char* setup : {"pixels 5 30 0; order grb; serpentine off; max 200; button 9",
+                            "pixels 5 64 8; order bgr; serpentine on; max 1; button none",
+                            "rgb 4 5 6; anode on; max 255; button none"}) {
+    custom = Settings{};
+    replay(setup, "esp32s3", custom);
+    handleCommand("export", "esp32s3", custom, staged, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING(setup, out + 7);
+  }
+
+  handleCommand("export", "esp32s3", Settings{}, staged, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("export none", out);
+}
+
 static void test_help_fits_and_lists_every_command() {
   Settings s;
   char out[1200];
   run("help", s, s, out, sizeof(out));
   for (const char* word : {"show", "boards", "board <name>", "pixels", "order", "serpentine", "rgb", "anode", "max",
-                           "button", "save", "cancel", "reset", "restart", "pins", "test <pin>", "test off", "about"}) {
+                           "button", "export", "save", "cancel", "reset", "restart", "pins", "test <pin>", "test off", "about"}) {
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, word), word);
   }
   TEST_ASSERT_LESS_THAN(sizeof(out) - 1, strlen(out));
@@ -341,6 +384,7 @@ int main() {
   RUN_TEST(test_pins_lists_only_usable_pins_and_not_the_button);
   RUN_TEST(test_test_lights_a_color_and_refuses_bad_requests);
   RUN_TEST(test_a_known_command_with_wrong_arguments_shows_its_usage);
+  RUN_TEST(test_export_replays_to_the_same_settings);
   RUN_TEST(test_help_fits_and_lists_every_command);
   return UNITY_END();
 }

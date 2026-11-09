@@ -66,6 +66,23 @@ for v in spec["lightRejected"]:
     raw = bytes.fromhex(v["bytes"])
     padded = raw + bytes(16 - len(raw))
     lines.append(f'  {{"{v["name"]}", {{{arr(padded)}}}, {len(raw)}, 0, 0, 0}},')
+lines += ["};", ""]
+
+# Info as each firmware writes it. needsSetup is absent before 0.4.0, which never sets that bit.
+lines += [
+    "struct InfoVector {",
+    "  const char* name; uint8_t bytes[5]; uint8_t major, minor, patch; bool display, offControl, light, needsSetup;",
+    "};",
+    "static const InfoVector INFO_VECTORS[] = {",
+]
+for v in spec["info"]:
+    raw = bytes.fromhex(v["bytes"])
+    assert len(raw) == 5, v["name"]
+    major, minor, patch = (int(x) for x in v["firmware"].split("."))
+    flags = [v["display"], v["offControl"], v.get("light", False), v.get("needsSetup", False)]
+    lines.append(
+        f'  {{"{v["name"]}", {{{arr(raw)}}}, {major}, {minor}, {patch}, {", ".join(str(f).lower() for f in flags)}}},'
+    )
 lines += ["};"]
 effects = bytes.fromhex(spec["effects"][0]["bytes"])
 lines += [
