@@ -1,4 +1,5 @@
 #include <profile.h>
+#include <string.h>
 #include <unity.h>
 
 #include <initializer_list>
@@ -98,10 +99,31 @@ static void test_stale_looks_different_from_fresh() {
 
 static void test_info_vectors_encode() {
   for (const InfoVector& v : INFO_VECTORS) {
-    uint8_t out[INFO_SIZE];
-    encodeInfo({v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup}, out);
-    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, out, INFO_SIZE, v.name);
+    uint8_t out[INFO_MAX_SIZE];
+    const size_t n = encodeInfo({v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup, v.identify, v.board}, out);
+    TEST_ASSERT_EQUAL_MESSAGE(v.length, n, v.name);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, out, v.length, v.name);
   }
+}
+
+// A long board name is cut to INFO_BOARD_MAX bytes, never inside a character.
+static void test_info_cuts_a_long_board_name_at_a_whole_character() {
+  uint8_t out[INFO_MAX_SIZE];
+  // 39 ASCII bytes, then a three-byte character that would end at byte 42.
+  const char* board = "012345678901234567890123456789012345678" "\xe2\x80\x94";
+  const size_t n = encodeInfo({0, 5, 0, true, false, true, false, true, board}, out);
+  TEST_ASSERT_EQUAL(INFO_SIZE + 1 + 39, n);
+  TEST_ASSERT_EQUAL(39, out[INFO_SIZE]);
+  const char* fits = "Waveshare ESP32-S3-Matrix, 8x8";
+  TEST_ASSERT_EQUAL(INFO_SIZE + 1 + strlen(fits), encodeInfo({0, 5, 0, true, true, true, false, true, fits}, out));
+  TEST_ASSERT_EQUAL_MEMORY(fits, out + INFO_SIZE + 1, strlen(fits));
+}
+
+static void test_identify_vectors() {
+  for (const IdentifyVector& v : IDENTIFY_VECTORS) {
+    TEST_ASSERT_EQUAL_MESSAGE(v.ok, parseIdentify(v.bytes, v.length) == ParseResult::Ok, v.name);
+  }
+  TEST_ASSERT_TRUE(parseIdentify(nullptr, 1) != ParseResult::Ok);
 }
 
 static void test_light_vectors() {
@@ -221,6 +243,44 @@ static void test_effects_work_on_a_single_led_and_a_strip() {
   TEST_ASSERT_LESS_THAN_UINT8(10, middle.r);  // hue about 177, cyan
 }
 
+// Tester report, 2026-11-09: pink looked almost white on the LEDs. With gamma, its green and blue drop well below
+// its red, so it reads as pink; the ends stay put and the curve never runs backwards.
+static void test_led_gamma_keeps_the_ends_and_makes_pink_pink() {
+  TEST_ASSERT_EQUAL_UINT8(0, ledLevel(0));
+  TEST_ASSERT_EQUAL_UINT8(255, ledLevel(255));
+  for (int i = 1; i < 256; i++) TEST_ASSERT_TRUE(ledLevel(static_cast<uint8_t>(i)) >= ledLevel(static_cast<uint8_t>(i - 1)));
+  const Rgb8 pink = ledColor({0xff, 0xc0, 0xcb});
+  TEST_ASSERT_EQUAL_UINT8(255, pink.r);
+  TEST_ASSERT_INT_WITHIN(2, 115, pink.g);
+  TEST_ASSERT_INT_WITHIN(2, 135, pink.b);
+  // Palette primaries are unchanged: full channels stay full and empty ones stay off.
+  const Rgb8 magenta = ledColor({0xff, 0x00, 0xff});
+  TEST_ASSERT_TRUE(magenta.r == 255 && magenta.g == 0 && magenta.b == 255);
+  // Green (008000) is half on the wire, so it becomes much dimmer; orange (ffa500) moves toward red.
+  TEST_ASSERT_INT_WITHIN(2, 37, ledColor({0x00, 0x80, 0x00}).g);
+  TEST_ASSERT_INT_WITHIN(2, 75, ledColor({0xff, 0xa5, 0x00}).g);
+}
+
+// The palette colors an LED already shows well stay as they are; the rest were picked by eye (2026-11-09).
+static void test_led_palette_keeps_pure_colors_and_frames_pick_it_by_index() {
+  const uint32_t expected[PALETTE_SIZE] = {0xff0000, 0x00ff00, 0x0000ff, 0x00ffff, 0xffffff, 0xff9040,
+                                           0x6000c0, 0xff00ff, 0xffc000, 0xff4000, 0xff2454};
+  for (size_t i = 0; i < PALETTE_SIZE; i++) {
+    const Rgb8 c = LED_PALETTE[i];
+    TEST_ASSERT_EQUAL_HEX32(expected[i], (static_cast<uint32_t>(c.r) << 16) | (c.g << 8) | c.b);
+  }
+  Frame f{};
+  f.paletteIndex = 9;  // orange
+  f.r = 0xff;
+  f.g = 0xa5;
+  const Rgb8 orange = ledBase(f);
+  TEST_ASSERT_TRUE(orange.r == 0xff && orange.g == 0x40 && orange.b == 0);
+  f.paletteIndex = PALETTE_SIZE;  // past the palette: not a palette color, so gamma
+  TEST_ASSERT_INT_WITHIN(2, 75, ledBase(f).g);
+  f.paletteIndex = PALETTE_NONE;
+  TEST_ASSERT_INT_WITHIN(2, 75, ledBase(f).g);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_published_vectors_parse);
@@ -232,6 +292,8 @@ int main() {
   RUN_TEST(test_fields_are_little_endian);
   RUN_TEST(test_stale_looks_different_from_fresh);
   RUN_TEST(test_info_vectors_encode);
+  RUN_TEST(test_info_cuts_a_long_board_name_at_a_whole_character);
+  RUN_TEST(test_identify_vectors);
   RUN_TEST(test_light_vectors);
   RUN_TEST(test_light_round_trips);
   RUN_TEST(test_effects_list_matches_the_published_vector);
@@ -241,5 +303,7 @@ int main() {
   RUN_TEST(test_faster_speed_changes_sooner);
   RUN_TEST(test_rainbow_on_8x8_steps_22_5_degrees);
   RUN_TEST(test_effects_work_on_a_single_led_and_a_strip);
+  RUN_TEST(test_led_gamma_keeps_the_ends_and_makes_pink_pink);
+  RUN_TEST(test_led_palette_keeps_pure_colors_and_frames_pick_it_by_index);
   return UNITY_END();
 }

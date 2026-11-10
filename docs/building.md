@@ -4,8 +4,8 @@ The firmware builds with [PlatformIO](https://platformio.org/) on the Arduino-ES
 
 ```bash
 pip install platformio
-pio test -e native              # the profile, effects, layouts, settings, and console, on this computer
-pio run -e esp32s3              # writes release/cheerlights-esp32-ble-esp32s3.bin
+pio test -e native              # the profile, effects, layouts, settings, console, Wi-Fi, and screen, on this computer
+pio run -e esp32s3              # writes release/cheerlights-esp32-esp32s3.bin
 ```
 
 | Environment | Chip | Platform |
@@ -32,7 +32,7 @@ python tools/test_ble.py --port COM4
 ```
 
 `test_ble.py` acts as the phone over Bluetooth, reads the board's serial log to confirm each result, and drives the USB console.
-It is written for an ESP32-S3 board that is set up, and reads the pin and brightness cap from `show`.
+It is written for an ESP32-S3 board that is set up and set to Bluetooth, and reads the pin and brightness cap from `show`.
 It changes the colors shown while it runs, and puts back the one setting it saves.
 
 `python tools/test_ble.py --port COM4 --show ff0000` sends one color.
@@ -59,9 +59,15 @@ The repository's Pages source must be set to GitHub Actions.
 
 - `lib/profile/`: the BLE profile's formats and the effects, with no hardware code.
 - `lib/device/`: the settings, presets, pin rules, pixel layout, and console, with no hardware code.
-- `src/main.cpp`: Bluetooth, the LEDs, the button, and the serial consoles.
-- `test/`: native tests for both libraries.
+- `lib/wifi/`: the saved networks, the `wifi` commands, the scan reply, and the local API's JSON, with no hardware code.
+- `lib/screen/`: drawing, fonts, and the animations for the T-Display's screen, with no hardware code.
+- `src/main.cpp`: the LEDs, the button, the effects, and the serial consoles.
+- `src/ble_link.cpp` and `src/wifi_link.cpp`: the two ways a light gets its color, Bluetooth from a phone or MQTT over Wi-Fi with mDNS and the local API.
+- `src/screen_out.cpp`: the T-Display's screen.
+- `test/`: native tests for the four libraries.
   `tools/gen_vectors.py` turns `docs/ble-vectors.json` into the test vectors.
+- `tools/preview.py`: draws the screen's scenes on this computer, with the same code as the board.
+  `tools/make_fonts.py` makes `lib/screen/fonts.cpp` from Source Sans 3 in `fonts/`.
 - `partitions.csv`: the app, a crash dump, then the settings store at the end of flash, so a newer image does not erase settings.
 - `installer/`: the install page; `tools/build_site.py` assembles it with the images.
 
@@ -73,8 +79,8 @@ Mark it tested only after running it on the real board.
 
 ## Release
 
-1. Set `FW_MAJOR`, `FW_MINOR`, and `FW_PATCH` in `src/main.cpp`.
-2. Push a tag with that version, such as `v0.3.0`.
+1. Set `FW_MAJOR`, `FW_MINOR`, and `FW_PATCH` in `src/app.h`, and `FW_TEXT` in `src/main.cpp` to match.
+2. Push a tag with that version, such as `v0.5.0`.
 3. The Release workflow checks the tag against the version, runs the native tests, builds every chip, and drafts a GitHub release with the images and `SHA256SUMS.txt`.
 4. Read the draft and publish it.
    Publishing deploys the install page with the new images.

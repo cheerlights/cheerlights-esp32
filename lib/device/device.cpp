@@ -7,11 +7,23 @@
 
 namespace cheerlights {
 
+const char* boardName(const Settings& s, const char* chip) {
+  for (size_t i = 0; i < PRESET_COUNT; i++) {
+    if (strcmp(PRESETS[i].chip, chip) != 0) continue;
+    Settings mine = s;
+    mine.link = PRESETS[i].settings.link;
+    mine.label = PRESETS[i].settings.label;
+    mine.flip = PRESETS[i].settings.flip;
+    if (mine == PRESETS[i].settings) return PRESETS[i].board;
+  }
+  return "Custom";
+}
+
 bool operator==(const Settings& a, const Settings& b) {
   return a.output == b.output && a.pixelPin == b.pixelPin && a.count == b.count && a.width == b.width &&
          a.serpentine == b.serpentine && a.order == b.order && a.redPin == b.redPin && a.greenPin == b.greenPin &&
          a.bluePin == b.bluePin && a.commonAnode == b.commonAnode && a.maxBrightness == b.maxBrightness &&
-         a.buttonPin == b.buttonPin;
+         a.buttonPin == b.buttonPin && a.link == b.link && a.label == b.label && a.flip == b.flip;
 }
 
 namespace {
@@ -23,6 +35,14 @@ Settings pixels(int pin, int count, int width, ColorOrder order, int cap, int bu
   s.count = static_cast<uint16_t>(count);
   s.width = static_cast<uint16_t>(width);
   s.order = order;
+  s.maxBrightness = static_cast<uint8_t>(cap);
+  s.buttonPin = static_cast<int8_t>(button);
+  return s;
+}
+
+Settings screen(int cap, int button) {
+  Settings s;
+  s.output = Output::Screen;
   s.maxBrightness = static_cast<uint8_t>(cap);
   s.buttonPin = static_cast<int8_t>(button);
   return s;
@@ -47,6 +67,7 @@ const Preset PRESETS[] = {
     {"c5-devkitc", "esp32c5", "Espressif ESP32-C5-DevKitC-1", pixels(27, 1, 0, ColorOrder::GRB, 64, 28), false},
     {"atom-lite", "esp32", "M5Stack ATOM Lite", pixels(27, 1, 0, ColorOrder::GRB, 64, 39), false},
     {"atom-matrix", "esp32", "M5Stack ATOM Matrix, 5x5", pixels(27, 25, 5, ColorOrder::GRB, 20, 39), false},
+    {"tdisplay", "esp32", "LilyGO T-Display, 1.14 inch screen", screen(200, 35), true},
 };
 const size_t PRESET_COUNT = sizeof(PRESETS) / sizeof(PRESETS[0]);
 
@@ -112,9 +133,24 @@ const char* problem(const char* chip, const Settings& s) {
       if (p == s.buttonPin) return "the button and the LED need different pins";
     }
     if (pins[0] == pins[1] || pins[1] == pins[2] || pins[0] == pins[2]) return "the RGB LED needs three different pins";
+  } else if (s.output == Output::Screen) {
+    if (strcmp(chip, "esp32") != 0) return "a screen is only on the LilyGO T-Display, an ESP32";
+    if (s.buttonPin == 0) return "GPIO 0 is the T-Display's info button";
   }
+  if (s.link == Link::Wifi && !chipHasWifi(chip)) return "this chip has no Wi-Fi";
   if (s.maxBrightness < 1) return "the brightness cap must be 1 to 255";
   return nullptr;
+}
+
+bool chipHasWifi(const char* chip) { return strcmp(chip, "esp32h2") != 0; }
+
+const EffectInfo* effectsFor(Output output, size_t& count) {
+  if (output == Output::Screen) {
+    count = SCREEN_EFFECT_COUNT;
+    return SCREEN_EFFECTS;
+  }
+  count = EFFECT_COUNT;
+  return EFFECTS;
 }
 
 int pixelCount(const Settings& s) {
@@ -170,16 +206,23 @@ int alivePixel(const Settings& s) {
 Rgb8 scenePixel(const Settings& s, const Scene& scene, int index) {
   if (scene.off) return {0, 0, 0};
   if (!scene.haveColor) return index == alivePixel(s) ? Rgb8{40, 40, 40} : Rgb8{0, 0, 0};
+  const Rgb8 base = ledBase(scene.frame);
   if (scene.frame.stale) {
-    const Shown shown = renderFrame(scene.frame);
+    Frame led = scene.frame;
+    led.r = base.r;
+    led.g = base.g;
+    led.b = base.b;
+    const Shown shown = renderFrame(led);
     if (shown.markersOff && isMarker(s, index)) return {0, 0, 0};
     return {shown.r, shown.g, shown.b};
   }
   const Layout l = layoutOf(s);
   int x, y;
   pixelXY(s, index, x, y);
-  const Rgb8 color{scene.frame.r, scene.frame.g, scene.frame.b};
-  return effectPixel(scene.light.effect, color, scene.light.speed, scene.ms, x, y, l.width, l.height);
+  const Rgb8 p = effectPixel(scene.light.effect, base, scene.light.speed, scene.ms, x, y, l.width, l.height);
+  // An effect that draws its own colors, such as the rainbow, gets them through gamma like any other color.
+  if ((effectFlags(EFFECTS, EFFECT_COUNT, scene.light.effect) & EFFECT_SHOWS_COLOR) == 0) return ledColor(p);
+  return p;
 }
 
 bool sceneMoves(const Scene& scene) {
@@ -190,6 +233,20 @@ uint8_t capBrightness(uint8_t level, uint8_t cap) {
   if (cap == 0) cap = 1;
   if (level == 0) level = 1;
   return static_cast<uint8_t>(1 + (static_cast<uint32_t>(level) * (cap - 1) + 127) / 255);
+}
+
+uint16_t outputLevel(uint8_t channel, uint8_t level) {
+  return static_cast<uint16_t>((static_cast<uint32_t>(channel) * level * 256u + 127u) / 255u);
+}
+
+bool identifyLit(uint32_t elapsedMs) { return elapsedMs < IDENTIFY_MS && (elapsedMs / 250) % 2 == 0; }
+
+uint8_t roundLevel(uint16_t value) { return static_cast<uint8_t>((static_cast<uint32_t>(value) + 128u) >> 8); }
+
+uint8_t ditherLevel(uint16_t value, uint8_t& residue) {
+  const uint32_t sum = static_cast<uint32_t>(value) + residue;
+  residue = static_cast<uint8_t>(sum & 0xFF);
+  return static_cast<uint8_t>(sum >> 8);
 }
 
 namespace {
@@ -205,18 +262,24 @@ void encodeSettings(const Settings& s, uint8_t out[STORED_SIZE]) {
   out[4] = static_cast<uint8_t>(s.count >> 8);
   out[5] = static_cast<uint8_t>(s.width);
   out[6] = static_cast<uint8_t>(s.width >> 8);
-  out[7] = static_cast<uint8_t>((s.serpentine ? 1 : 0) | (s.commonAnode ? 2 : 0));
+  // Bit 3 is set when the name is hidden, so settings saved before it existed keep the name.
+  out[7] = static_cast<uint8_t>((s.serpentine ? 1 : 0) | (s.commonAnode ? 2 : 0) | (s.flip ? 4 : 0) |
+                                (s.label ? 0 : 8));
   out[8] = static_cast<uint8_t>(s.order);
   out[9] = static_cast<uint8_t>(s.redPin);
   out[10] = static_cast<uint8_t>(s.greenPin);
   out[11] = static_cast<uint8_t>(s.bluePin);
   out[12] = s.maxBrightness;
   out[13] = static_cast<uint8_t>(s.buttonPin);
+  out[14] = static_cast<uint8_t>(s.link);  // zero is Bluetooth, so settings saved before Wi-Fi keep Bluetooth
 }
 
 bool decodeSettings(const uint8_t* data, size_t length, Settings& out) {
   if (data == nullptr || length != STORED_SIZE || data[0] != STORED_VERSION) return false;
-  if (data[1] > static_cast<uint8_t>(Output::Rgb) || data[8] > static_cast<uint8_t>(ColorOrder::BGR)) return false;
+  if (data[1] > static_cast<uint8_t>(Output::Screen) || data[8] > static_cast<uint8_t>(ColorOrder::BGR) ||
+      data[14] > static_cast<uint8_t>(Link::Wifi)) {
+    return false;
+  }
   Settings s;
   s.output = static_cast<Output>(data[1]);
   s.pixelPin = static_cast<int8_t>(data[2]);
@@ -224,6 +287,9 @@ bool decodeSettings(const uint8_t* data, size_t length, Settings& out) {
   s.width = static_cast<uint16_t>(data[5] | (data[6] << 8));
   s.serpentine = (data[7] & 1) != 0;
   s.commonAnode = (data[7] & 2) != 0;
+  s.flip = (data[7] & 4) != 0;
+  s.label = (data[7] & 8) == 0;
+  s.link = static_cast<Link>(data[14]);
   s.order = static_cast<ColorOrder>(data[8]);
   s.redPin = static_cast<int8_t>(data[9]);
   s.greenPin = static_cast<int8_t>(data[10]);
@@ -264,10 +330,16 @@ void describe(const Settings& s, char* out, size_t size) {
       snprintf(out, size, "an RGB LED on GPIO %d, %d, %d, common %s, brightness cap %u, %s", s.redPin, s.greenPin,
                s.bluePin, s.commonAnode ? "anode" : "cathode", s.maxBrightness, button);
       break;
+    case Output::Screen:
+      snprintf(out, size, "the T-Display's screen, color name %s, %s, brightness cap %u, %s",
+               s.label ? "shown" : "hidden", s.flip ? "flipped" : "not flipped", s.maxBrightness, button);
+      break;
     default:
       snprintf(out, size, "no light set up, %s", button);
-      break;
+      return;
   }
+  const size_t at = strlen(out);
+  if (at < size) snprintf(out + at, size - at, ", over %s", s.link == Link::Wifi ? "Wi-Fi" : "Bluetooth");
 }
 
 void exportCommands(const Settings& s, char* out, size_t size) {
@@ -281,6 +353,9 @@ void exportCommands(const Settings& s, char* out, size_t size) {
       snprintf(light, sizeof(light), "rgb %d %d %d; anode %s", s.redPin, s.greenPin, s.bluePin,
                s.commonAnode ? "on" : "off");
       break;
+    case Output::Screen:
+      snprintf(light, sizeof(light), "screen; label %s; flip %s", s.label ? "on" : "off", s.flip ? "on" : "off");
+      break;
     default:
       snprintf(out, size, "none");
       return;
@@ -291,7 +366,8 @@ void exportCommands(const Settings& s, char* out, size_t size) {
   } else {
     snprintf(button, sizeof(button), "none");
   }
-  snprintf(out, size, "%s; max %u; button %s", light, s.maxBrightness, button);
+  snprintf(out, size, "%s; max %u; button %s; link %s", light, s.maxBrightness, button,
+           s.link == Link::Wifi ? "wifi" : "bluetooth");
 }
 
 namespace {
@@ -342,15 +418,25 @@ const char HELP[] =
     "  serpentine <on|off>      grid rows that zigzag\n"
     "  rgb <red> <green> <blue> a plain RGB LED on three pins\n"
     "  anode <on|off>           a common-anode RGB LED\n"
+    "  screen                   the T-Display's built-in screen\n"
+    "  label <on|off>           a screen: show the color's name\n"
+    "  flip <on|off>            a screen: turn the picture upside down\n"
     "  max <1-255>              brightness cap\n"
     "  button <pin|none>        a button to ground that turns the light off and on\n"
+    "  link <bluetooth|wifi>    get the color from a phone, or by itself over Wi-Fi\n"
     "  save                     keep the changes and restart\n"
     "  cancel                   drop changes not yet saved\n"
     "  reset                    forget the settings, then restart\n"
     "  restart\n"
+    "Wi-Fi networks (saved at once, used with link wifi):\n"
+    "  wifi \"<name>\" \"<password>\"  save a network; quotes are needed only for spaces\n"
+    "  wifi list                the saved networks; it joins the strongest one in range\n"
+    "  wifi scan                the networks in range that it can join, strongest first\n"
+    "  wifi forget \"<name>\"     forget a network, or all of them with wifi forget all\n"
     "Finding your LEDs (nothing is saved):\n"
     "  pins                     the pins that can drive LEDs on this chip\n"
     "  test <pin> <count> <rrggbb>  light that color on the first count LEDs of a pin\n"
+    "  test <pin> <count> <rrggbb> <rrggbb>  the second color on the second half, to compare\n"
     "  test off                 stop the test\n"
     "  about                    chip, firmware, name, and whether it is set up";
 
@@ -391,17 +477,22 @@ Action handleCommand(const char* line, const char* chip, const Settings& running
   } else if (strcmp(cmd, "test") == 0 && n == 2 && strcmp(w[1], "off") == 0) {
     snprintf(out, size, "test off");
     return Action::TestOff;
-  } else if (strcmp(cmd, "test") == 0 && n == 4 && number(w[1], 0, 127, a) && number(w[2], 1, MAX_PIXELS, b)) {
-    Rgb8 color{};
-    if (!hexColor(w[3], color)) {
+  } else if (strcmp(cmd, "test") == 0 && (n == 4 || n == 5) && number(w[1], 0, 127, a) &&
+             number(w[2], 1, MAX_PIXELS, b)) {
+    Rgb8 color{}, second{};
+    if (!hexColor(w[3], color) || (n == 5 && !hexColor(w[4], second))) {
       snprintf(out, size, "The color is six hex digits, such as ff0000 for red.");
     } else if (!pinUsable(chip, a, true)) {
       snprintf(out, size, "GPIO %d cannot drive LEDs on %s.", a, chip);
     } else if (a == running.buttonPin) {
       snprintf(out, size, "GPIO %d is the button.", a);
     } else {
-      if (test != nullptr) *test = {a, b, color};
-      snprintf(out, size, "test pin=%d count=%d color=%s", a, b, w[3]);
+      if (test != nullptr) *test = {a, b, color, n == 5, second};
+      if (n == 5) {
+        snprintf(out, size, "test pin=%d count=%d color=%s second=%s", a, b, w[3], w[4]);
+      } else {
+        snprintf(out, size, "test pin=%d count=%d color=%s", a, b, w[3]);
+      }
       return Action::Test;
     }
   } else if (strcmp(cmd, "show") == 0) {
@@ -469,6 +560,27 @@ Action handleCommand(const char* line, const char* chip, const Settings& running
       staged.greenPin = static_cast<int8_t>(b);
       staged.bluePin = static_cast<int8_t>(c);
       snprintf(out, size, "An RGB LED on GPIO %d, %d, %d.%s", a, b, c, SAVE_HINT);
+    }
+  } else if (strcmp(cmd, "screen") == 0 && n == 1) {
+    if (strcmp(chip, "esp32") != 0) {
+      snprintf(out, size, "A screen is only on the LilyGO T-Display, an ESP32.");
+    } else {
+      staged.output = Output::Screen;
+      snprintf(out, size, "The T-Display's screen.%s", SAVE_HINT);
+    }
+  } else if (strcmp(cmd, "label") == 0 && n == 2 && onOff(w[1], staged.label)) {
+    snprintf(out, size, "Color name %s.%s", staged.label ? "shown" : "hidden", SAVE_HINT);
+  } else if (strcmp(cmd, "flip") == 0 && n == 2 && onOff(w[1], staged.flip)) {
+    snprintf(out, size, "Flip %s.%s", w[1], SAVE_HINT);
+  } else if (strcmp(cmd, "link") == 0 && n == 2 &&
+             (strcmp(w[1], "bluetooth") == 0 || strcmp(w[1], "wifi") == 0)) {
+    if (strcmp(w[1], "wifi") == 0 && !chipHasWifi(chip)) {
+      snprintf(out, size, "The %s has no Wi-Fi, so it gets the color over Bluetooth.", chip);
+    } else {
+      staged.link = strcmp(w[1], "wifi") == 0 ? Link::Wifi : Link::Bluetooth;
+      snprintf(out, size, "%s.%s",
+               staged.link == Link::Wifi ? "The color over Wi-Fi, from CheerLights" : "The color from a phone, over Bluetooth",
+               SAVE_HINT);
     }
   } else if (strcmp(cmd, "anode") == 0 && n == 2 && onOff(w[1], staged.commonAnode)) {
     snprintf(out, size, "Common anode %s.%s", w[1], SAVE_HINT);

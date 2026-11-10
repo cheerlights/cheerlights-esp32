@@ -19,7 +19,7 @@ jobs:
       - run: pip install platformio
       - name: Check the tag matches the firmware version
         run: |
-          version=$(grep -oP 'FW_MAJOR = \K\d+, FW_MINOR = \d+, FW_PATCH = \d+' src/main.cpp | tr -d ' ' | sed 's/,FW_MINOR=/./;s/,FW_PATCH=/./')
+          version=$(grep -oP 'FW_MAJOR = \K\d+, FW_MINOR = \d+, FW_PATCH = \d+' src/app.h | tr -d ' ' | sed 's/,FW_MINOR=/./;s/,FW_PATCH=/./')
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match firmware $version"; exit 1; }
       - name: Native tests
         run: pio test -e native

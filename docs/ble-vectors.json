@@ -77,17 +77,53 @@
       "light": true,
       "needsSetup": true,
       "bytes": "010004000c"
+    },
+    {
+      "name": "firmware 0.5.0 on a T-Display, with display, light, identify, and its board",
+      "protocol": 1,
+      "firmware": "0.5.0",
+      "display": true,
+      "offControl": false,
+      "light": true,
+      "needsSetup": false,
+      "identify": true,
+      "board": "LilyGO T-Display, 1.14 inch screen",
+      "bytes": "0100050015224c696c79474f20542d446973706c61792c20312e313420696e63682073637265656e"
+    },
+    {
+      "name": "firmware 0.5.0, wired by hand",
+      "protocol": 1,
+      "firmware": "0.5.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "needsSetup": false,
+      "identify": true,
+      "board": "Custom",
+      "bytes": "010005001706437573746f6d"
     }
   ],
   "infoNewer": [
     {
-      "name": "a newer firmware with a capability bit this reader does not know, one byte longer",
+      "name": "a newer firmware with a capability bit this reader does not know and a field after the board",
       "protocol": 1,
       "firmware": "0.9.0",
       "display": true,
       "offControl": true,
       "light": true,
-      "bytes": "01000900172a"
+      "identify": true,
+      "board": "Matrix",
+      "bytes": "0100090057064d61747269782a"
+    },
+    {
+      "name": "a board name cut short, read as no board",
+      "protocol": 1,
+      "firmware": "0.9.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "identify": true,
+      "bytes": "0100090017064d6174"
     }
   ],
   "bluefruit": [
@@ -190,6 +226,22 @@
         }
       ],
       "bytes": "030208000105536f6c69640c098107476c6974746572aabbff"
+    }
+  ],
+  "identify": [
+    {
+      "name": "blink",
+      "bytes": "01"
+    }
+  ],
+  "identifyRejected": [
+    {
+      "name": "empty",
+      "bytes": ""
+    },
+    {
+      "name": "unknown version",
+      "bytes": "02"
     }
   ]
 }

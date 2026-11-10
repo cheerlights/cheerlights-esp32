@@ -3,7 +3,7 @@
     python tools/build_site.py [--images DIR]
 
 The images come from release/ (a local build) or DIR (a downloaded release). The manifest's version is the
-firmware version in src/main.cpp, and every chip in CHIPS must have an image, so a page never offers a chip
+firmware version in src/app.h, and every chip in CHIPS must have an image, so a page never offers a chip
 it cannot flash.
 """
 import argparse
@@ -26,7 +26,7 @@ CHIPS = {
 
 
 def firmware_version():
-    with open(os.path.join(ROOT, "src", "main.cpp"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "src", "app.h"), encoding="utf-8") as f:
         m = re.search(r"FW_MAJOR = (\d+), FW_MINOR = (\d+), FW_PATCH = (\d+)", f.read())
     return ".".join(m.groups())
 
@@ -44,7 +44,7 @@ def main():
     version = firmware_version()
     builds = []
     for chip, family in CHIPS.items():
-        name = f"cheerlights-esp32-ble-{chip}.bin"
+        name = f"cheerlights-esp32-{chip}.bin"
         src = os.path.join(a.images, name)
         if not os.path.exists(src):
             sys.exit(f"missing image: {src}")

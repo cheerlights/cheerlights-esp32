@@ -42,7 +42,7 @@ def main():
     nvs = next(offset for name, offset, _ in want if name == "nvs")
     failed = 0
     for chip in CHIPS:
-        path = os.path.join(ROOT, "release", f"cheerlights-esp32-ble-{chip}.bin")
+        path = os.path.join(ROOT, "release", f"cheerlights-esp32-{chip}.bin")
         if not os.path.exists(path):
             print(f"FAIL {chip}: no image")
             failed += 1

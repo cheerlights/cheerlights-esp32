@@ -55,13 +55,28 @@ void encodeLight(const Light& light, uint8_t out[LIGHT_SIZE]) {
   out[3] = light.speed == 0 ? 1 : light.speed;
 }
 
-void encodeInfo(const Info& info, uint8_t out[INFO_SIZE]) {
+size_t encodeInfo(const Info& info, uint8_t out[INFO_MAX_SIZE]) {
   out[0] = PROTOCOL_VERSION;
   out[1] = info.major;
   out[2] = info.minor;
   out[3] = info.patch;
   out[4] = (info.display ? CAP_DISPLAY : 0) | (info.offControl ? CAP_OFF_CONTROL : 0) | (info.light ? CAP_LIGHT : 0) |
-           (info.needsSetup ? CAP_NEEDS_SETUP : 0);
+           (info.needsSetup ? CAP_NEEDS_SETUP : 0) | (info.identify ? CAP_IDENTIFY : 0);
+  if (info.board == nullptr) return INFO_SIZE;
+  size_t n = strlen(info.board);
+  if (n > INFO_BOARD_MAX) {
+    n = INFO_BOARD_MAX;
+    // Back up to the start of a character, so the name is never cut inside one.
+    while (n > 0 && (static_cast<uint8_t>(info.board[n]) & 0xC0) == 0x80) n--;
+  }
+  out[INFO_SIZE] = static_cast<uint8_t>(n);
+  memcpy(out + INFO_SIZE + 1, info.board, n);
+  return INFO_SIZE + 1 + n;
+}
+
+ParseResult parseIdentify(const uint8_t* data, size_t length) {
+  if (data == nullptr || length < 1) return ParseResult::WrongLength;
+  return data[0] == IDENTIFY_VERSION ? ParseResult::Ok : ParseResult::UnknownVersion;
 }
 
 const EffectInfo EFFECTS[] = {
@@ -70,6 +85,28 @@ const EffectInfo EFFECTS[] = {
     {EFFECT_RAINBOW, 0, "Rainbow"},
 };
 const size_t EFFECT_COUNT = sizeof(EFFECTS) / sizeof(EFFECTS[0]);
+
+const EffectInfo SCREEN_EFFECTS[] = {
+    {EFFECT_SOLID, EFFECT_SHOWS_COLOR, "Solid"},
+    {EFFECT_SPARKLE, EFFECT_SHOWS_COLOR, "Sparkle"},
+    {EFFECT_SNOW, EFFECT_SHOWS_COLOR, "Snow"},
+    {EFFECT_LEAVES, EFFECT_SHOWS_COLOR, "Leaves"},
+};
+const size_t SCREEN_EFFECT_COUNT = sizeof(SCREEN_EFFECTS) / sizeof(SCREEN_EFFECTS[0]);
+
+uint8_t effectFlags(const EffectInfo* effects, size_t count, uint8_t id) {
+  for (size_t i = 0; i < count; i++) {
+    if (effects[i].id == id) return effects[i].flags;
+  }
+  return EFFECT_SHOWS_COLOR;
+}
+
+bool hasEffect(const EffectInfo* effects, size_t count, uint8_t id) {
+  for (size_t i = 0; i < count; i++) {
+    if (effects[i].id == id) return true;
+  }
+  return false;
+}
 
 size_t encodeEffects(const EffectInfo* effects, size_t count, uint8_t* out, size_t capacity) {
   if (count > 255 || capacity < 2) return 0;
@@ -136,6 +173,51 @@ Rgb8 hue(float degrees) {
 }
 
 }  // namespace
+
+uint8_t ledLevel(uint8_t value) {
+  static uint8_t table[256];
+  static bool built = false;
+  if (!built) {
+    for (int i = 0; i < 256; i++) table[i] = static_cast<uint8_t>(powf(i / 255.0f, 2.8f) * 255.0f + 0.5f);
+    built = true;
+  }
+  return table[value];
+}
+
+Rgb8 ledColor(Rgb8 c) { return {ledLevel(c.r), ledLevel(c.g), ledLevel(c.b)}; }
+
+const Rgb8 LED_PALETTE[PALETTE_SIZE] = {
+    {0xff, 0x00, 0x00},  // red
+    {0x00, 0xff, 0x00},  // green (008000 on a screen)
+    {0x00, 0x00, 0xff},  // blue
+    {0x00, 0xff, 0xff},  // cyan
+    {0xff, 0xff, 0xff},  // white
+    {0xff, 0x90, 0x40},  // oldlace, the warm white (fdf5e6)
+    {0x60, 0x00, 0xc0},  // purple (800080)
+    {0xff, 0x00, 0xff},  // magenta
+    {0xff, 0xc0, 0x00},  // yellow (ffff00)
+    {0xff, 0x40, 0x00},  // orange (ffa500)
+    {0xff, 0x24, 0x54},  // pink (ffc0cb)
+};
+
+const PaletteColor PALETTE[PALETTE_SIZE] = {
+    {"red", {0xff, 0x00, 0x00}},    {"green", {0x00, 0x80, 0x00}},   {"blue", {0x00, 0x00, 0xff}},
+    {"cyan", {0x00, 0xff, 0xff}},   {"white", {0xff, 0xff, 0xff}},   {"oldlace", {0xfd, 0xf5, 0xe6}},
+    {"purple", {0x80, 0x00, 0x80}}, {"magenta", {0xff, 0x00, 0xff}}, {"yellow", {0xff, 0xff, 0x00}},
+    {"orange", {0xff, 0xa5, 0x00}}, {"pink", {0xff, 0xc0, 0xcb}},
+};
+
+uint8_t paletteIndexOf(Rgb8 color) {
+  for (size_t i = 0; i < PALETTE_SIZE; i++) {
+    if (PALETTE[i].rgb == color) return static_cast<uint8_t>(i);
+  }
+  return PALETTE_NONE;
+}
+
+Rgb8 ledBase(const Frame& frame) {
+  if (frame.paletteIndex < PALETTE_SIZE) return LED_PALETTE[frame.paletteIndex];
+  return ledColor({frame.r, frame.g, frame.b});
+}
 
 bool effectMoves(uint8_t effect) {
   return effect == EFFECT_BREATHE || effect == EFFECT_SPARKLE || effect == EFFECT_RIPPLE || effect == EFFECT_RAINBOW;

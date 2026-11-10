@@ -35,6 +35,9 @@
 
 * { box-sizing: border-box; }
 
+/* A class that sets display (.choice, .live, .facts) would otherwise show an element marked hidden. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--ground);
@@ -119,6 +122,8 @@ button[aria-busy="true"] { cursor: progress; }
 
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
+input[type="radio"], input[type="checkbox"] { accent-color: var(--primary); }
+
 select, input[type="number"] {
   min-height: 44px;
   padding: 6px 10px;
@@ -127,6 +132,71 @@ select, input[type="number"] {
 }
 
 input[type="number"] { width: 7em; font-variant-numeric: tabular-nums; }
+
+input[type="text"], input[type="password"] {
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: var(--ground);
+  width: 100%;
+  max-width: 22em;
+}
+
+.link-choice { margin: 0 0 24px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.link-choice legend { padding: 0; margin-bottom: 4px; }
+.link-choice legend h3 { margin: 0; }
+.link-choice .choice:first-of-type { border-top: 0; }
+h3.what { margin-top: 0; }
+
+.networks { list-style: none; margin: 4px 0 20px; padding: 0; max-width: 32em; }
+.networks li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.networks li:first-child { border-top: 0; }
+.nearby-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; max-width: 32em; margin-top: 28px; }
+.nearby-head h3 { margin: 0; }
+button.quiet { min-height: 36px; padding: 4px 12px; border-color: var(--line); white-space: nowrap; flex: none; }
+.nearby { list-style: none; margin: 8px 0 0; padding: 0; max-width: 32em; }
+.nearby li + li { border-top: 1px solid var(--line); }
+.nearby button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 8px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.nearby button[aria-pressed="true"] { background: color-mix(in srgb, var(--focus) 14%, transparent); }
+.nearby .name { flex: 1; }
+.nearby .tag { color: var(--muted); font-size: 14px; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; flex: none; }
+.bars i { display: block; width: 3px; background: var(--line); border-radius: 1px; }
+.bars i:nth-child(1) { height: 25%; }
+.bars i:nth-child(2) { height: 50%; }
+.bars i:nth-child(3) { height: 75%; }
+.bars i:nth-child(4) { height: 100%; }
+.bars[data-level="1"] i:nth-child(-n+1),
+.bars[data-level="2"] i:nth-child(-n+2),
+.bars[data-level="3"] i:nth-child(-n+3),
+.bars[data-level="4"] i:nth-child(-n+4) { background: var(--ink); }
+.wifi-form { margin-top: 16px; }
+.wifi-form .check { margin-top: 4px; }
+
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .inline { display: inline-flex; gap: 8px; align-items: center; }
 .field > label.check, .check { display: flex; gap: 10px; align-items: center; min-height: 44px; font-weight: 400; margin: 0; }
 .check input { width: 20px; height: 20px; }

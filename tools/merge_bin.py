@@ -1,4 +1,4 @@
-"""After each ESP32 build, write release/cheerlights-esp32-ble-<chip>.bin: one file that flashes at offset 0x0.
+"""After each ESP32 build, write release/cheerlights-esp32-<chip>.bin: one file that flashes at offset 0x0.
 
 It holds the bootloader, the partition table, and the app at the addresses the build uses,
 so a browser flasher or `esptool write-flash 0x0` can install it without knowing them.
@@ -11,7 +11,7 @@ Import("env")  # noqa: F821  PlatformIO provides this when run as an extra scrip
 
 board = env.BoardConfig()  # noqa: F821
 chip = board.get("build.mcu")
-out = os.path.join(env.subst("$PROJECT_DIR"), "release", f"cheerlights-esp32-ble-{chip}.bin")  # noqa: F821
+out = os.path.join(env.subst("$PROJECT_DIR"), "release", f"cheerlights-esp32-{chip}.bin")  # noqa: F821
 extra = [(offset, env.subst(path)) for offset, path in env.get("FLASH_EXTRA_IMAGES", [])]  # noqa: F821
 app = env.subst("$BUILD_DIR/${PROGNAME}.bin")  # noqa: F821
 

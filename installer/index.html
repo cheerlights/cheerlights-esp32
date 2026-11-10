@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Set up a CheerLights light</title>
-  <meta name="description" content="Flash the CheerLights Bluetooth firmware onto an ESP32 board and tell it where its LEDs are, in the browser.">
+  <meta name="description" content="Install the CheerLights firmware on an ESP32 board in the browser, tell it where its LEDs or screen are, and connect it over Bluetooth or Wi-Fi.">
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="icon" href="favicon-32.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,19 +26,19 @@
 
   <main>
     <h1>Set up a CheerLights light</h1>
-    <p class="lead">Put the CheerLights Bluetooth firmware on an ESP32 board and tell it where its LEDs are. Then the CheerLights app for Android sends it the color everyone is sharing.</p>
+    <p class="lead">Put the CheerLights firmware on an ESP32 board, tell it what is connected, and choose how it gets the color: from the CheerLights app over Bluetooth, or by itself over Wi-Fi. Then it shows the same color as every other CheerLights light.</p>
     <p id="browser-note" class="note" hidden>This page needs to talk to USB devices, which only Chrome and Edge on a computer can do. Open it there to continue.</p>
-    <p class="needs">You need a board with an ESP32, ESP32-S3, C3, C5, C6, or H2 chip, and a USB cable that carries data.</p>
+    <p class="needs">You need a board with an ESP32, ESP32-S3, C3, C5, C6, or H2 chip, and a USB cable that carries data, not only power. The H2 has no Wi-Fi, so it works over Bluetooth only.</p>
 
     <section id="step-install" class="step">
       <h2>1. Install the firmware</h2>
-      <p>Plug the board into this computer, click Install, and pick its port. The installer picks the right file for your board's chip.</p>
+      <p>Plug the board into this computer, click Install firmware, and choose its port. The installer picks the right firmware for your board's chip.</p>
       <esp-web-install-button id="install" manifest="manifest.json">
         <button slot="activate" class="primary">Install firmware <span id="version"></span></button>
         <span slot="unsupported" class="note">This browser cannot install firmware. Use Chrome or Edge on a computer.</span>
         <span slot="not-allowed" class="note">The installer needs this page to be served over HTTPS.</span>
       </esp-web-install-button>
-      <p class="small">If the board does not show up, hold its BOOT button while you plug it in. Updating a board you already set up? Leave Erase device unticked, and it keeps its settings. When the install finishes, go on to step 2: the board stays dark until it is set up.</p>
+      <p class="small">If the board does not show up in the list, hold its BOOT button while you plug it in. Updating a board you already set up? Leave Erase device unticked, and it keeps its settings and Wi-Fi. When the install finishes, go on to step 2: the board stays dark until it is set up.</p>
     </section>
 
     <section id="step-connect" class="step">
@@ -55,7 +55,24 @@
         <button id="restore" class="primary">Put its setup back</button>
         <p class="hint">Or set it up fresh: choose what is connected to it below.</p>
       </div>
-      <p>Pick your board if it is in the list. Otherwise choose what you wired up and the page will help you find it.</p>
+
+      <fieldset id="link-choice" class="choices link-choice">
+        <legend><h3>How does it get the color?</h3></legend>
+        <label id="link-bluetooth" class="choice">
+          <input type="radio" name="link" value="bluetooth" checked>
+          <span><strong>From a phone, over Bluetooth</strong>
+          <span class="hint">The CheerLights app on your phone sends it the color. For a wearable, or a light that goes where your phone goes.</span></span>
+        </label>
+        <label id="link-wifi" class="choice">
+          <input type="radio" name="link" value="wifi">
+          <span><strong>By itself, over Wi-Fi</strong>
+          <span class="hint">It gets the color from CheerLights on its own, with no phone. For a light that stays on a desk, a shelf, or a classroom wall.</span></span>
+        </label>
+        <p id="link-note" class="hint" hidden></p>
+      </fieldset>
+
+      <h3 class="what">What is connected?</h3>
+      <p>Pick your board if it is in the list. Otherwise, choose what you wired up, and the page walks you through it.</p>
       <fieldset id="choices" class="choices">
         <legend class="visually-hidden">What is connected</legend>
         <div id="preset-list"></div>
@@ -73,6 +90,12 @@
 
       <div id="preset-panel" class="panel" hidden>
         <p id="preset-note"></p>
+        <div id="look-panel" class="field" hidden>
+          <h3>Pick a look</h3>
+          <label class="check"><input id="look-label" type="checkbox" checked> Show the color's name on the screen</label>
+          <label class="check"><input id="look-flip" type="checkbox" aria-describedby="look-flip-hint"> Turn the picture upside down</label>
+          <p id="look-flip-hint" class="hint">For a board that stands the other way up.</p>
+        </div>
         <button id="save-preset" class="primary">Set up this board</button>
       </div>
 
@@ -104,7 +127,7 @@
 
         <div id="order-field" class="field" hidden>
           <h3>Which color do they show?</h3>
-          <p>Different LEDs take red, green, and blue in different orders. The page sends one color and asks what you see.</p>
+          <p>Different LEDs take red, green, and blue in different orders. The page sends two test colors and asks what you see each time.</p>
           <div id="order-ask" class="ask">
             <p id="order-question" aria-live="polite"></p>
             <div class="row swatches">
@@ -140,7 +163,7 @@
         <div class="field">
           <label for="max">Brightness cap</label>
           <input id="max" type="number" min="1" max="255" value="64" inputmode="numeric" aria-describedby="max-hint">
-          <p id="max-hint" class="hint">1 to 255: the brightest the phone can make it. Each LED can draw 60 mA at full white, so keep it low for a long strip on USB power.</p>
+          <p id="max-hint" class="hint">1 to 255: the brightest the light ever gets. Each LED can draw 60 mA at full white, so keep it low for a long strip on USB power.</p>
         </div>
         <div class="field">
           <label for="button-pin">Off button</label>
@@ -153,17 +176,61 @@
       <p id="setup-status" class="status" role="status"></p>
     </section>
 
+    <section id="step-wifi" class="step" hidden>
+      <h2>4. Add its Wi-Fi</h2>
+      <p>Pick the network it should join, or type its name, then add its password. Moving the light between places, such as home and school? Add each network: it keeps up to eight and joins the strongest one in range.</p>
+      <p class="small">The password goes over the USB cable to the board and stays on it; this page does not keep a copy.</p>
+
+      <h3>Saved on the board</h3>
+      <ul id="wifi-list" class="networks"></ul>
+      <p id="wifi-none" class="hint">No networks yet.</p>
+
+      <div class="nearby-head">
+        <h3>Networks the board can join</h3>
+        <button id="scan-again" class="quiet">Scan again</button>
+      </div>
+      <ul id="scan-list" class="nearby" aria-describedby="scan-status"></ul>
+      <p id="scan-status" class="hint" role="status"></p>
+
+      <div id="wifi-form" class="wifi-form">
+        <div class="field">
+          <label for="wifi-name">Network name</label>
+          <input id="wifi-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="wifi-name-hint">
+          <p id="wifi-name-hint" class="hint">From the list, or type the name of a network not listed, such as a hidden one.</p>
+        </div>
+        <div class="field">
+          <label for="wifi-password">Password</label>
+          <input id="wifi-password" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="wifi-password-hint">
+          <label class="check"><input id="wifi-show" type="checkbox"> Show the password</label>
+          <p id="wifi-password-hint" class="hint">Leave it empty for an open network.</p>
+        </div>
+        <button id="wifi-add" class="primary">Add this network</button>
+      </div>
+      <p id="wifi-status" class="status" role="status"></p>
+    </section>
+
     <section id="step-app" class="step" hidden>
-      <h2>4. Connect from the app</h2>
-      <p>Open the CheerLights app, go to Wearable, tap Find, and choose <strong id="device-name">your board</strong>.</p>
+      <h2 id="done-title">4. Connect from the app</h2>
+      <div id="done-bluetooth">
+        <p>Open the CheerLights app, go to Devices (Wearable in earlier versions), tap Find, and choose <strong id="device-name">your board</strong>.</p>
+      </div>
+      <div id="done-wifi" hidden>
+        <p id="join-status" class="status" role="status"></p>
+        <dl id="join-facts" class="facts" hidden>
+          <dt>Name</dt><dd id="join-name"></dd>
+          <dt>Address</dt><dd><a id="join-host" target="_blank" rel="noopener"></a><span id="join-ip-wrap" hidden> (<a id="join-ip" target="_blank" rel="noopener"></a>)</span></dd>
+        </dl>
+        <p id="join-app" hidden>Open the address to see the light's page: the color, the animations, and a Blink button. A phone on the same Wi-Fi network also finds it in the CheerLights app under Devices.</p>
+        <button id="join-retry" hidden>Check again</button>
+      </div>
       <p id="live" class="live" hidden><span id="live-swatch" class="swatch big" aria-hidden="true"></span><span id="live-text"></span></p>
-      <p class="small">To change the setup later, come back to this page and connect again, or forget the settings and start over. This browser keeps a copy of the setup, so if the board is ever erased, this page offers to put it back when you connect.</p>
+      <p class="small">To change the setup later, come back to this page and connect again, or forget the settings and start over. This browser keeps a copy of the setup, never the Wi-Fi passwords, so if the board is ever erased, this page offers to put it back when you connect.</p>
       <button id="forget">Forget its settings</button>
     </section>
   </main>
 
   <footer class="foot">
-    <p>Firmware and source: <a href="https://github.com/cheerlights/cheerlights-esp32-ble">cheerlights/cheerlights-esp32-ble</a>. Prefer a terminal? See <a href="https://github.com/cheerlights/cheerlights-esp32-ble/blob/main/docs/configure.md">Set up your board</a>.</p>
+    <p>Firmware and source: <a href="https://github.com/cheerlights/cheerlights-esp32">cheerlights/cheerlights-esp32</a>. Prefer a terminal? See <a href="https://github.com/cheerlights/cheerlights-esp32/blob/main/docs/configure.md">Set up your board</a>.</p>
   </footer>
 </body>
 </html>

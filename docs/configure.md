@@ -2,12 +2,12 @@
 
 A freshly flashed board lights nothing and drives no pin until it is set up.
 The firmware cannot tell what is wired to the board, and sending LED data to the wrong pin could reach whatever else is connected there.
-You tell it over USB, either on the [install page](https://cheerlights.github.io/cheerlights-esp32-ble/) or by typing commands in a serial monitor.
+You tell it over USB, either on the [install page](https://cheerlights.github.io/cheerlights-esp32/) or by typing commands in a serial monitor.
 Settings are kept in flash, survive a restart, and survive flashing a newer release.
 
 ## With the install page
 
-The [install page](https://cheerlights.github.io/cheerlights-esp32-ble/) works in Chrome or Edge on a computer.
+The [install page](https://cheerlights.github.io/cheerlights-esp32/) works in Chrome or Edge on a computer.
 After it installs the firmware, click Connect, and it lists the presets for your board's chip.
 For anything else, it lights each free pin in turn until you say your LEDs are lit, then shows two test colors to work out their color order.
 
@@ -60,6 +60,7 @@ Changes wait until `save`.
 | `h2-devkitm` | ESP32-H2 | Espressif ESP32-H2-DevKitM-1 | 1 LED on GPIO 8 | GPIO 9 | no |
 | `atom-lite` | ESP32 | M5Stack ATOM Lite | 1 LED on GPIO 27 | GPIO 39 | no |
 | `atom-matrix` | ESP32 | M5Stack ATOM Matrix | 25 LEDs on GPIO 27, rows of 5, cap 20 | GPIO 39 | no |
+| `tdisplay` | ESP32 | LilyGO T-Display | Its 1.14 inch screen, backlight cap 200 | GPIO 35, next animation; GPIO 0 shows the info card | yes |
 
 Color order is GRB unless the table says RGB, and the brightness cap is 64 unless it says otherwise.
 "Tested" means run on the real board; the others come from the maker's schematic or documentation and have only been built.
@@ -125,15 +126,24 @@ The off choice survives a restart.
 | `rgb <red> <green> <blue>` | A plain RGB LED on three pins |
 | `anode <on\|off>` | A common-anode RGB LED |
 | `max <1-255>` | The brightness cap: what 255 from the phone reaches |
-| `button <pin\|none>` | A button to ground that turns the light off and on |
+| `button <pin\|none>` | A button to ground that turns the light off and on; on a screen it steps through the animations |
+| `screen` | The LilyGO T-Display's built-in screen (ESP32 only) |
+| `label <on\|off>` | A screen: show the color's name |
+| `flip <on\|off>` | A screen: turn the picture upside down |
+| `link <bluetooth\|wifi>` | Get the color from a phone over Bluetooth, or by itself over Wi-Fi ([wifi.md](wifi.md)); the ESP32-H2 is Bluetooth only |
 | `save` | Keep the changes and restart |
 | `cancel` | Drop changes not yet saved |
 | `reset` | Forget the settings, then restart with no light set up |
 | `restart` | Restart without changing anything |
 | `pins` | The pins that can drive LEDs on this chip |
 | `test <pin> <count> <rrggbb>` | Light a color on the first `count` LEDs of a pin, without saving |
+| `test <pin> <count> <rrggbb> <rrggbb>` | Light the first color on the first half and the second on the rest, to compare two colors |
 | `test off` | End the test and go back to the settings in use |
-| `about` | The chip, the firmware version, the Bluetooth name, and whether it is set up |
+| `wifi "<name>" "<password>"` | Save a Wi-Fi network at once, newest first; quotes are needed only for spaces, and an open network takes no password |
+| `wifi list` | The saved networks; the light joins the strongest one in range |
+| `wifi scan` | The networks in range that the board can join, strongest first, each with its signal in dBm, and `saved` or `open` where it applies; a scan takes a few seconds, up to about 8 on a Bluetooth light |
+| `wifi forget "<name>"` | Forget a network, or all of them with `wifi forget all` |
+| `about` | The chip, the firmware version, the name, whether it is set up, the link, and on Wi-Fi its address and connection |
 
 `export` prints a line such as `export pixels 14 64 8; order rgb; serpentine on; max 16; button 0`.
 Typing each of those commands, then `save`, sets up another board of the same kind the same way.

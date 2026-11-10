@@ -27,16 +27,24 @@ This firmware names itself `CL-` and four hex digits from its address, such as `
 |---|---|---|---|
 | CheerLights service | `b73a0a04-bdb7-4051-9135-815aac2abaa3` | | |
 | `Color` | `0fc3891d-11a7-408c-9283-b14dffc5bcff` | Read, write, write without response | The frame below |
-| `Info` | `3554cfbc-0bcc-47f2-9af2-3b313c97a59d` | Read | The five bytes below |
+| `Info` | `3554cfbc-0bcc-47f2-9af2-3b313c97a59d` | Read | The bytes below |
 | `Light` | `0a8345b7-afa9-47df-9d63-e98130514e19` | Read, write, write without response | Brightness, effect, and speed, below |
 | `Effects` | `c4fa31c4-e81e-49d2-be0c-530c01865776` | Read | The animations the light has, below |
+| `Identify` | `ee2d928a-492c-4ef4-a9be-b3dadd663819` | Write, write without response | One byte, below, to make the light blink |
 
 `Info` is byte 0 protocol version, bytes 1 to 3 firmware major, minor, and patch, and byte 4 capability flags.
 Flag bit 0 means the light has a display, bit 1 means it has a physical off control, and bit 2 means it has `Light` and `Effects`.
 A phone shows brightness and effect controls only when bit 2 is set, so a light without them still works with every phone.
 Bit 3 means the light is not set up: it does not know where its LEDs are, so it shows nothing.
-A phone that sees bit 3 tells its owner to set the light up over USB, on the [install page](https://cheerlights.github.io/cheerlights-esp32-ble/).
+A phone that sees bit 3 tells its owner to set the light up over USB, on the [install page](https://cheerlights.github.io/cheerlights-esp32/).
 Firmware before 0.4.0 never sets bit 3.
+Bit 4 means the light has `Identify`.
+
+From firmware 0.5.0, byte 5 is the length of the board's name, up to 40, and the name follows in UTF-8, such as `LilyGO T-Display, 1.14 inch screen`, or `Custom` for wiring set by hand.
+A phone shows it as what the light is.
+The value is then longer than 20 bytes, so the phone reads it with a long read.
+A name shorter than its length byte says is treated as no name.
+Firmware before 0.5.0 sends the first five bytes only.
 
 ## Frame
 
@@ -87,12 +95,20 @@ A receiver ignores a `Light` value shorter than four bytes or with an unknown ve
 | then, per entry | Size, id, flags, length, name | `u8` size of the rest of the entry, `u8` id, `u8` flags, `u8` name length up to 20, then a UTF-8 name |
 
 Entry 0 is always solid.
+The list depends on the light: LEDs have Solid (0), Breathe (1), Sparkle (2), Ripple (3), and Rainbow (4), and a screen has Solid (0), Sparkle (2), Snow (5), and Leaves (6).
 Flag bit 0 means the effect shows the color it is sent, such as by dimming or sparkling it.
 An effect without it draws its own colors, such as a rainbow.
 A phone following the CheerLights color offers only effects with bit 0 set, and a receiver ignores flag bits it does not know.
 A receiver reads the fields of an entry it knows and moves to the next entry by its size, so a later firmware can add a field to each entry.
 It ignores bytes after the last entry.
 The value can exceed one ATT payload, so the phone reads it with a long read.
+
+## Identify
+
+A phone writes one byte, the version, 1, to `Identify`, and the light blinks white and off, a quarter second each, for 3 seconds, then shows its color again.
+It lets an owner with several lights tell which one they are working with.
+A light ignores an empty value or an unknown version.
+A phone offers Blink only on a light with `Info` bit 4.
 
 ## Compatibility
 
@@ -113,7 +129,7 @@ The vectors named `...Newer` in [ble-vectors.json](ble-vectors.json) are values 
 ## Security
 
 Writes are unauthenticated, so anyone nearby can repaint a light.
-That is acceptable only because every characteristic controls light and nothing else: color, brightness, and the light's own animations.
+That is acceptable only because every characteristic controls light and nothing else: color, brightness, the light's own animations, and a blink.
 Never add a command beyond light over Bluetooth, such as network settings, firmware updates, or anything that stores data from the phone other than the `Light` value.
 For that reason, this firmware takes its wiring settings over USB only.
 

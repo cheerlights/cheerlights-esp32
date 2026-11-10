@@ -4,6 +4,8 @@
 const $ = (id) => document.getElementById(id);
 const FIND_COLOR = "303030"; // dim white, so a long strip stays within USB power
 const LIVE_URL = "https://api.thingspeak.com/channels/1417/feeds/last.json";
+const JOIN_TIMEOUT_MS = 90000; // two saved networks out of range take the board about 45 s to try
+const JOIN_POLL_MS = 2000;
 
 // One line-based conversation with the board's console.
 class Board {
@@ -54,7 +56,9 @@ class Board {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiters = this.waiters.filter((w) => w !== check);
-        reject(new Error(`No answer from the board (waiting for ${pattern})`));
+        // The pattern is for the developer console; people get a plain message.
+        console.warn(`No answer from the board, waiting for ${pattern}`);
+        reject(new Error("The board did not answer. Check the cable, then try again."));
       }, timeout);
       const check = (line) => {
         if (!pattern.test(line)) return false;
@@ -66,6 +70,7 @@ class Board {
     });
   }
 
+  // Commands are never logged or kept, because a Wi-Fi command carries a password.
   async send(command) {
     await this.writer.write(new TextEncoder().encode(command + "\n"));
   }
@@ -96,7 +101,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const state = {
   board: null,
-  about: null, // { chip, fw, name, setup }
+  about: null, // { chip, fw, name, setup, link, saved, wifi, ip, cheerlights }
   pins: [],
   pin: null,
   order: null,
@@ -104,14 +109,21 @@ const state = {
   firstSeen: null,
   testing: false,
   forgetArmed: false,
+  networks: [],
+  heard: [], // the last scan: { name, rssi, open }
+  joinRun: 0, // bumps to stop an earlier join wait
 };
 
 // What the console answers to each settings command, good or bad, so log lines in between are skipped.
-const REPLY = /^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO|GPIO \d+ cannot|A row cannot|The order is|Each of the three|The RGB LED needs|Usage|Not a command)/;
+const REPLY = /^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO|GPIO \d+ cannot|A row cannot|The order is|Each of the three|The RGB LED needs|The T-Display's screen|A screen is only|Color name|Flip |The color over Wi-Fi|The color from a phone|The \S+ has no Wi-Fi|Usage|Not a command)/;
 
 // Each board's setup, kept in this browser by its Bluetooth name, so a board erased by an install can be put back.
+// The setup is the board's own export, which never has Wi-Fi networks in it.
 const SAVED_PREFIX = "cheerlights-setup:";
-const SETUP_OK = /^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO)/;
+const SETUP_OK = /^(\d+ LEDs? on GPIO|Color order|Serpentine rows|An RGB LED|Common anode|Brightness cap|No button|Button on GPIO|The T-Display's screen|Color name|Flip |The color over Wi-Fi|The color from a phone)/;
+
+// Presets with a screen, which get the look choices.
+const SCREEN_PRESETS = new Set(["tdisplay"]);
 
 function savedSetup(name) {
   try {
@@ -159,7 +171,58 @@ function busy(button, on) {
 
 function parseAbout(line) {
   const fields = Object.fromEntries(line.replace(/^about /, "").split(" ").map((kv) => kv.split("=")));
-  return { chip: fields.chip, fw: fields.fw, name: fields.name, setup: fields.setup };
+  return {
+    chip: fields.chip,
+    fw: fields.fw,
+    name: fields.name,
+    setup: fields.setup,
+    link: fields.link, // absent before firmware 0.5.0, which is Bluetooth only
+    saved: fields.saved === undefined ? undefined : Number(fields.saved),
+    wifi: fields.wifi,
+    ip: fields.ip,
+    cheerlights: fields.cheerlights,
+  };
+}
+
+// ---- How the light gets the color ----
+
+// Firmware 0.5.0 and later take `link`; the ESP32-H2 has no Wi-Fi.
+function linkSupported() {
+  return state.about?.link !== undefined;
+}
+
+function wifiSupported() {
+  return linkSupported() && state.about.chip !== "esp32h2";
+}
+
+function chosenLink() {
+  if (!wifiSupported()) return "bluetooth";
+  return document.querySelector('input[name="link"]:checked')?.value || "bluetooth";
+}
+
+function setLink(link) {
+  const input = document.querySelector(`input[name="link"][value="${link === "wifi" ? "wifi" : "bluetooth"}"]`);
+  if (input) input.checked = true;
+}
+
+function showLinkChoice() {
+  const note = $("link-note");
+  $("link-wifi").hidden = !wifiSupported();
+  $("link-bluetooth").hidden = !linkSupported();
+  if (!linkSupported()) {
+    note.textContent = "This firmware gets the color over Bluetooth only. To use Wi-Fi, install the newest firmware in step 1, then connect again.";
+  } else if (!wifiSupported()) {
+    note.textContent = "The ESP32-H2 has no Wi-Fi, so it gets the color from a phone over Bluetooth.";
+  }
+  note.hidden = wifiSupported();
+  setLink(wifiSupported() && state.about.link === "wifi" ? "wifi" : "bluetooth");
+}
+
+// Stages the chosen link, after any command that resets the staged settings (board <name>).
+async function sendLink() {
+  if (!linkSupported()) return;
+  const reply = await state.board.ask(`link ${chosenLink()}`, REPLY, 2000);
+  if (!/^The color (over Wi-Fi|from a phone)/.test(reply)) throw new Error(reply);
 }
 
 // The board restarts after a save; this waits for it to come back and report its settings.
@@ -173,6 +236,7 @@ async function connect() {
   const button = $("connect");
   busy(button, true);
   setStatus($("connect-status"), "Connecting");
+  stopJoinWait();
   try {
     if (state.board) await state.board.close();
     // The installer already asked for this port, so reuse it when there is exactly one.
@@ -196,11 +260,14 @@ async function connect() {
       `Connected to ${state.about.name}, an ${chip} running firmware ${state.about.fw}. ${setUp ? "It is set up already; you can change it below." : restorable ? "It is not set up, but this browser kept a copy of its last setup." : "It is not set up yet."}`,
       "ok");
     await loadChoices();
+    showLinkChoice();
     showRestore(restorable);
     $("step-setup").hidden = false;
+    $("step-wifi").hidden = true;
+    $("step-app").hidden = true;
     if (setUp) {
       await rememberSetup();
-      showDone();
+      await showDone();
     }
   } catch (e) {
     if (e.name === "NotFoundError") setStatus($("connect-status"), "No port chosen.");
@@ -214,9 +281,11 @@ function showRestore(saved) {
   $("restore-panel").hidden = !saved;
   if (!saved) return;
   $("restore-note").textContent = `Last time this browser saw ${state.about.name}, it had ${saved.description || saved.commands}.`;
+  const link = saved.commands.match(/(?:^|; )link (wifi|bluetooth)(?:;|$)/);
+  if (link && wifiSupported()) setLink(link[1]);
 }
 
-// Sends the kept commands to a board that lost its setup, then saves.
+// Sends the kept commands to a board that lost its setup, then the link chosen above, then saves.
 async function restore() {
   const saved = savedSetup(state.about.name);
   const button = $("restore");
@@ -228,6 +297,7 @@ async function restore() {
       const reply = await state.board.ask(command, REPLY, 2000);
       if (!SETUP_OK.test(reply)) throw new Error(`${reply} Choose what is connected below instead.`);
     }
+    await sendLink();
     await save();
     $("restore-panel").hidden = true;
   } catch (e) {
@@ -307,8 +377,10 @@ async function onChoice() {
   $("common-panel").hidden = value !== "pixels" && value !== "rgb";
   if (value.startsWith("preset:")) {
     const input = document.querySelector('input[name="choice"]:checked');
+    const screen = SCREEN_PRESETS.has(value.slice("preset:".length));
+    $("look-panel").hidden = !screen;
     $("preset-note").textContent = input.dataset.tested === "true"
-      ? `${input.dataset.board}: the LEDs, brightness, and button are already known.`
+      ? `${input.dataset.board}: ${screen ? "the screen, brightness, and buttons" : "the LEDs, brightness, and button"} are already known.`
       : `${input.dataset.board}: set from the maker's documentation, but not yet tried on a real board. If the colors look wrong, choose "Something else" instead.`;
   }
   updateSaveState();
@@ -322,8 +394,16 @@ async function savePreset() {
   try {
     const reply = await state.board.ask(`board ${name}`, /^Preset |^No preset/, 2000);
     if (reply.startsWith("No preset")) throw new Error(reply);
+    if (SCREEN_PRESETS.has(name)) {
+      for (const command of [`label ${$("look-label").checked ? "on" : "off"}`, `flip ${$("look-flip").checked ? "on" : "off"}`]) {
+        const look = await state.board.ask(command, REPLY, 2000);
+        if (!SETUP_OK.test(look)) throw new Error(look);
+      }
+    }
+    await sendLink();
     await save();
   } catch (e) {
+    await state.board.ask("cancel", /^Changes dropped/, 2000).catch(() => {});
     setStatus($("setup-status"), e.message, "error");
   } finally {
     busy(button, false);
@@ -343,8 +423,8 @@ async function save() {
   const about = await board.ask("about", /^about chip=/, 4000);
   state.about = parseAbout(about);
   await rememberSetup();
-  setStatus($("setup-status"), "Set up. The board is ready.", "ok");
-  showDone();
+  setStatus($("setup-status"), "The board is set up and ready.", "ok");
+  await showDone();
 }
 
 // Finding the pin: light each free pin in turn until the person sees their LEDs.
@@ -426,7 +506,7 @@ async function orderAnswer(seen) {
     return;
   }
   if (seen === state.firstSeen) {
-    setStatus($("order-result"), "That is the same color twice. Let's try once more.", "error");
+    setStatus($("order-result"), "That was the same color both times. Starting again with the first color.", "error");
     await orderStart();
     return;
   }
@@ -446,7 +526,7 @@ function updateSaveState() {
   if (value === "pixels") {
     if (state.pin === null) why = "Find the pin first.";
     else if (!state.order) why = "Answer the color question first.";
-    else if ($("is-grid").checked && !(Number($("width").value) >= 2 && Number($("width").value) <= ledCount())) why = "The row width must be 2 or more, and no more than the number of LEDs.";
+    else if ($("is-grid").checked && !(Number($("width").value) >= 2 && Number($("width").value) <= ledCount())) why = "LEDs per row must be at least 2 and no more than the number of LEDs.";
   } else if (value === "rgb") {
     const pins = ["red-pin", "green-pin", "blue-pin"].map((id) => $(id).value);
     if (new Set(pins).size !== 3) why = "Pick three different pins.";
@@ -478,6 +558,7 @@ async function saveCustom() {
       const reply = await state.board.ask(command, REPLY, 2000);
       if (!SETUP_OK.test(reply)) throw new Error(reply);
     }
+    await sendLink();
     await save();
   } catch (e) {
     setStatus($("setup-status"), e.message, "error");
@@ -486,22 +567,265 @@ async function saveCustom() {
   }
 }
 
+// ---- Wi-Fi networks ----
+
+// Why a network cannot go to the board, or "" when it can. The console reads a name and password in double quotes,
+// one byte at a time, and drops control characters, so those cannot be sent.
+function networkProblem(name, password) {
+  const bytes = (s) => new TextEncoder().encode(s).length;
+  if (name.length === 0) return "Type the network's name.";
+  if (name.includes('"') || password.includes('"')) {
+    return 'The board cannot take a double quote (") in a network name or password, so this network cannot be added here.';
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(name + password)) return "The name or password has a character the board cannot take, such as a tab.";
+  if (bytes(name) > 32) return `A Wi-Fi network name is at most 32 bytes, and this one is ${bytes(name)}.`;
+  if (password.length > 0 && (bytes(password) < 8 || bytes(password) > 63)) {
+    return "A Wi-Fi password is 8 to 63 characters. Leave it empty for an open network.";
+  }
+  return "";
+}
+
+const WIFI_REPLY = /^(Saved "|Forgot "|All Wi-Fi networks forgotten|No saved network|No saved Wi-Fi networks|Saved Wi-Fi networks, newest first:|A Wi-Fi |Could not read that line|Usage: wifi|The \S+ has no Wi-Fi)/;
+const SCAN_REPLY = /^(Networks in range, strongest first:|No Wi-Fi networks in range|The scan did not finish|The \S+ has no Wi-Fi)/;
+// A scan takes the board 2 to 4 seconds, and up to about 8 while Bluetooth shares the radio. A command sent during
+// one waits for it, so Wi-Fi commands wait this long too.
+const SCAN_TIMEOUT_MS = 15000;
+
+// The scan line: "Home" -48 dBm saved, "Cafe" -71 dBm open. A quote or backslash in a name comes with a backslash.
+function parseScan(reply) {
+  const found = [];
+  for (const m of reply.matchAll(/"((?:[^"\\]|\\.)*)" (-?\d+) dBm((?: saved| open)*)/g)) {
+    found.push({
+      name: m[1].replace(/\\(.)/g, "$1"),
+      rssi: Number(m[2]),
+      saved: m[3].includes(" saved"),
+      open: m[3].includes(" open"),
+    });
+  }
+  return found;
+}
+
+// Four bars, as a phone shows Wi-Fi signal.
+function signalLevel(rssi) {
+  if (rssi >= -55) return [4, "strong signal"];
+  if (rssi >= -67) return [3, "good signal"];
+  if (rssi >= -78) return [2, "fair signal"];
+  return [1, "weak signal"];
+}
+
+async function scanNetworks() {
+  const button = $("scan-again");
+  const status = $("scan-status");
+  busy(button, true);
+  status.textContent = "Scanning for networks. This takes a few seconds.";
+  try {
+    const reply = await state.board.ask("wifi scan", SCAN_REPLY, SCAN_TIMEOUT_MS);
+    if (!/^(Networks in range|No Wi-Fi networks)/.test(reply)) throw new Error(reply);
+    state.heard = parseScan(reply);
+    showScan();
+  } catch (e) {
+    state.heard = [];
+    $("scan-list").replaceChildren();
+    status.textContent = `${e.message} You can still type the network's name below.`;
+  } finally {
+    busy(button, false);
+  }
+}
+
+// Saved follows the board's list, so a network added since the scan is marked too.
+function showScan() {
+  const found = state.heard;
+  const list = $("scan-list");
+  const typed = $("wifi-name").value;
+  list.replaceChildren(...found.map((n) => {
+    const item = document.createElement("li");
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.setAttribute("aria-pressed", String(n.name === typed));
+    const [level, words] = signalLevel(n.rssi);
+    const bars = document.createElement("span");
+    bars.className = "bars";
+    bars.dataset.level = String(level);
+    bars.title = `${words}, ${n.rssi} dBm`;
+    bars.setAttribute("aria-hidden", "true");
+    bars.append(...[1, 2, 3, 4].map(() => document.createElement("i")));
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = n.name;
+    const tags = [state.networks.includes(n.name) ? "saved" : "", n.open ? "open, no password" : ""].filter(Boolean).join(", ");
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = tags;
+    pick.setAttribute("aria-label", [n.name, words, tags].filter(Boolean).join(", "));
+    pick.append(bars, name, tag);
+    pick.addEventListener("click", () => pickNetwork(n));
+    item.append(pick);
+    return item;
+  }));
+  $("scan-status").textContent = found.length === 0
+    ? "The board found no networks it can join. If yours is hidden, type its name below."
+    : "Only networks this board can join are listed. Most ESP32 boards join only 2.4 GHz networks.";
+}
+
+function pickNetwork(n) {
+  $("wifi-name").value = n.name;
+  for (const b of $("scan-list").querySelectorAll("button")) {
+    b.setAttribute("aria-pressed", String(b.querySelector(".name").textContent === n.name));
+  }
+  const password = $("wifi-password");
+  password.value = "";
+  setStatus($("wifi-status"), "");
+  if (n.open) {
+    $("wifi-add").focus();
+  } else {
+    password.focus();
+  }
+}
+
+async function refreshNetworks() {
+  const reply = await state.board.ask("wifi list", /^(No saved Wi-Fi networks|Saved Wi-Fi networks, newest first:)/, SCAN_TIMEOUT_MS);
+  state.networks = [...reply.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+  const list = $("wifi-list");
+  list.replaceChildren(...state.networks.map((name) => {
+    const item = document.createElement("li");
+    const text = document.createElement("span");
+    text.textContent = name;
+    const forget = document.createElement("button");
+    forget.textContent = "Forget";
+    forget.setAttribute("aria-label", `Forget ${name}`);
+    forget.addEventListener("click", () => forgetNetwork(name, forget));
+    item.append(text, forget);
+    return item;
+  }));
+  list.hidden = state.networks.length === 0;
+  $("wifi-none").hidden = state.networks.length > 0;
+  if (state.heard.length > 0) showScan();
+}
+
+async function addNetwork() {
+  const nameInput = $("wifi-name");
+  const passwordInput = $("wifi-password");
+  const name = nameInput.value;
+  const password = passwordInput.value;
+  const why = networkProblem(name, password);
+  if (why) {
+    setStatus($("wifi-status"), why, "error");
+    return;
+  }
+  const button = $("wifi-add");
+  busy(button, true);
+  setStatus($("wifi-status"), "Saving it on the board");
+  try {
+    const command = password ? `wifi "${name}" "${password}"` : `wifi "${name}"`;
+    const reply = await state.board.ask(command, WIFI_REPLY, SCAN_TIMEOUT_MS);
+    if (!reply.startsWith('Saved "')) throw new Error(reply);
+    passwordInput.value = "";
+    nameInput.value = "";
+    $("wifi-show").checked = false;
+    passwordInput.type = "password";
+    setStatus($("wifi-status"), `Saved "${name}" on the board.`, "ok");
+    for (const b of $("scan-list").querySelectorAll("button")) b.setAttribute("aria-pressed", "false");
+    await refreshNetworks();
+    startJoinWait();
+  } catch (e) {
+    setStatus($("wifi-status"), e.message, "error");
+  } finally {
+    busy(button, false);
+  }
+}
+
+async function forgetNetwork(name, button) {
+  busy(button, true);
+  try {
+    const reply = await state.board.ask(`wifi forget "${name}"`, WIFI_REPLY, SCAN_TIMEOUT_MS);
+    if (!reply.startsWith('Forgot "')) throw new Error(reply);
+    setStatus($("wifi-status"), `Forgot "${name}".`, "ok");
+    await refreshNetworks();
+    if (state.networks.length > 0) startJoinWait();
+    else showNoNetworks();
+  } catch (e) {
+    setStatus($("wifi-status"), e.message, "error");
+    busy(button, false);
+  }
+}
+
+// ---- The last step ----
+
+function stopJoinWait() {
+  state.joinRun += 1;
+}
+
+// A Wi-Fi light with no network saved yet: the last step points back to step 4.
+function showNoNetworks() {
+  stopJoinWait();
+  $("join-retry").hidden = true;
+  $("join-facts").hidden = true;
+  $("join-app").hidden = true;
+  setStatus($("join-status"), "Add a network in step 4, and the light joins it right away.");
+}
+
+// Asks the board how it is doing until it is on Wi-Fi and has the CheerLights color, or the wait runs out.
+async function startJoinWait() {
+  const run = ++state.joinRun;
+  $("join-retry").hidden = true;
+  $("join-facts").hidden = true;
+  $("join-app").hidden = true;
+  setStatus($("join-status"), "Joining Wi-Fi.");
+  const deadline = Date.now() + JOIN_TIMEOUT_MS;
+  while (run === state.joinRun) {
+    const line = await state.board.ask("about", /^about chip=/, 3000).catch(() => null);
+    if (run !== state.joinRun) return;
+    if (line) {
+      const about = parseAbout(line);
+      if (about.wifi === "connected" && about.cheerlights === "connected") {
+        state.about = about;
+        setStatus($("join-status"), "On Wi-Fi and showing the CheerLights color.", "ok");
+        $("join-name").textContent = about.name;
+        // CL-8F00 is cheerlights-8f00.local on the network (docs/wifi.md).
+        const host = `cheerlights-${about.name.replace(/^CL-/i, "").toLowerCase()}.local`;
+        const link = $("join-host");
+        link.textContent = host;
+        link.href = `http://${host}/`;
+        const hasIp = Boolean(about.ip && about.ip !== "none");
+        $("join-ip").textContent = hasIp ? about.ip : "";
+        $("join-ip").href = hasIp ? `http://${about.ip}/` : "";
+        $("join-ip-wrap").hidden = !hasIp;
+        $("join-facts").hidden = false;
+        $("join-app").hidden = false;
+        return;
+      }
+      setStatus($("join-status"), about.wifi === "connected"
+        ? `On Wi-Fi at ${about.ip}. Waiting for the CheerLights color.`
+        : "Joining Wi-Fi.");
+    }
+    if (Date.now() >= deadline) {
+      setStatus($("join-status"), "It has not joined after 90 seconds. Check the network name and password above, and that the network is 2.4 GHz (only an ESP32-C5 can also join 5 GHz). The board keeps trying on its own.", "error");
+      $("join-retry").hidden = false;
+      return;
+    }
+    await sleep(JOIN_POLL_MS);
+  }
+}
+
 async function forget() {
   const button = $("forget");
   if (!state.forgetArmed) {
     state.forgetArmed = true;
-    button.textContent = "Click again to forget: the LEDs stay off until you set it up again";
+    button.textContent = "Click again to forget: the light stays off until you set it up again";
     setTimeout(() => { state.forgetArmed = false; button.textContent = "Forget its settings"; }, 6000);
     return;
   }
   state.forgetArmed = false;
   button.textContent = "Forget its settings";
   busy(button, true);
+  stopJoinWait();
   try {
     await state.board.ask("reset", /^Settings forgotten/, 3000);
     await waitForRestart(state.board);
     keepSetup(state.about.name, null);
     $("step-app").hidden = true;
+    $("step-wifi").hidden = true;
     setStatus($("setup-status"), "Settings forgotten. Choose what is connected to set it up again.");
     state.about.setup = "none";
   } catch (e) {
@@ -511,13 +835,27 @@ async function forget() {
   }
 }
 
-function showDone() {
+// Bluetooth: connect from the app. Wi-Fi: add networks, then watch it join.
+async function showDone() {
   $("device-name").textContent = state.about.name;
+  const wifi = state.about.link === "wifi";
+  $("done-bluetooth").hidden = wifi;
+  $("done-title").textContent = wifi ? "5. Watch it join" : "4. Connect from the app";
+  $("step-wifi").hidden = !wifi;
+  $("done-wifi").hidden = !wifi;
   $("step-app").hidden = false;
+  if (wifi) {
+    await refreshNetworks();
+    if (state.networks.length > 0) startJoinWait();
+    else showNoNetworks();
+    scanNetworks();
+  } else {
+    stopJoinWait();
+  }
   showLiveColor();
 }
 
-// The color the board will show once the app connects: the live CheerLights color.
+// The color the board will show: the live CheerLights color.
 async function showLiveColor() {
   try {
     const r = await fetch(LIVE_URL);
@@ -526,7 +864,7 @@ async function showLiveColor() {
     const hex = (last.field2 || "").trim();
     if (!/^#[0-9a-f]{6}$/i.test(hex)) return;
     $("live-swatch").style.background = hex;
-    $("live-text").textContent = `It will show the CheerLights color, which is ${name} right now.`;
+    $("live-text").textContent = `The CheerLights color is ${name} right now.`;
     $("live").hidden = false;
   } catch {
     // The page works without it.
@@ -571,6 +909,18 @@ function init() {
   $("order-again").addEventListener("click", orderStart);
   $("save-custom").addEventListener("click", saveCustom);
   $("forget").addEventListener("click", forget);
+  $("wifi-add").addEventListener("click", addNetwork);
+  $("scan-again").addEventListener("click", scanNetworks);
+  $("wifi-name").addEventListener("input", () => {
+    for (const b of $("scan-list").querySelectorAll("button")) {
+      b.setAttribute("aria-pressed", String(b.querySelector(".name").textContent === $("wifi-name").value));
+    }
+  });
+  for (const id of ["wifi-name", "wifi-password"]) {
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") addNetwork(); });
+  }
+  $("wifi-show").addEventListener("change", (e) => { $("wifi-password").type = e.target.checked ? "text" : "password"; });
+  $("join-retry").addEventListener("click", startJoinWait);
 }
 
 init();

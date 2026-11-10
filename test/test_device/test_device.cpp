@@ -142,6 +142,103 @@ static void test_scene_shows_nothing_off_alive_stale_and_fresh() {
   TEST_ASSERT_FALSE(sceneMoves(scene));
 }
 
+// Tester report, 2026-11-09: pink looked almost white on the LEDs. A palette color goes out as its picked LED
+// value, whatever the frame's hex says; any other color goes through gamma.
+static void test_scene_sends_led_values() {
+  const Settings grid = strip(64, 8, false);
+  Scene scene{};
+  scene.haveColor = true;
+  scene.frame.paletteIndex = 10;  // pink
+  scene.frame.r = 0xff;
+  scene.frame.g = 0xc0;
+  scene.frame.b = 0xcb;
+  Rgb8 p = scenePixel(grid, scene, 9);
+  TEST_ASSERT_TRUE(p.r == 0xff && p.g == 0x24 && p.b == 0x54);
+  scene.frame.paletteIndex = 1;  // green, 008000 on a screen, full on an LED
+  p = scenePixel(grid, scene, 9);
+  TEST_ASSERT_TRUE(p.r == 0 && p.g == 0xff && p.b == 0);
+
+  scene.frame.paletteIndex = PALETTE_NONE;  // a color from the wheel
+  scene.frame.r = 0xff;
+  scene.frame.g = 0xc0;
+  scene.frame.b = 0xcb;
+  p = scenePixel(grid, scene, 9);
+  TEST_ASSERT_EQUAL_UINT8(0xff, p.r);
+  TEST_ASSERT_INT_WITHIN(2, 115, p.g);
+  TEST_ASSERT_INT_WITHIN(2, 135, p.b);
+
+  scene.frame.paletteIndex = 7;  // magenta
+  scene.frame.stale = true;
+  p = scenePixel(grid, scene, 9);
+  TEST_ASSERT_TRUE(p.r == 85 && p.g == 0 && p.b == 85);  // a third of the LED value
+  scene.frame.stale = false;
+
+  scene.light.effect = EFFECT_RAINBOW;  // draws its own colors, so they go through gamma
+  scene.ms = 1234;
+  int x, y;
+  pixelXY(grid, 20, x, y);
+  const Rgb8 raw = effectPixel(EFFECT_RAINBOW, ledBase(scene.frame), scene.light.speed, scene.ms, x, y, 8, 8);
+  const Rgb8 led = ledColor(raw);
+  p = scenePixel(grid, scene, 20);
+  TEST_ASSERT_TRUE(p.r == led.r && p.g == led.g && p.b == led.b);
+
+  Scene fresh{};
+  TEST_ASSERT_EQUAL_UINT8(40, scenePixel(grid, fresh, 36).r);  // the alive pixel stays visible
+}
+
+// Hans, 2026-11-09: breathe turned orange red at the dim end and stuttered, on the Matrix at a cap of 16. The old
+// path rounded twice, so orange's green was off for a fifth of each breath and red had 15 steps. Here a whole breath
+// runs at 200 frames a second through the same functions the output uses.
+static void test_a_dim_breath_keeps_its_hue_and_fades_smoothly() {
+  const Settings grid = strip(64, 8, false);
+  Scene scene{};
+  scene.haveColor = true;
+  scene.frame.paletteIndex = 9;  // orange, ff4000 on an LED
+  scene.light.effect = EFFECT_BREATHE;
+  const uint8_t level = capBrightness(255, 16);
+  uint8_t residue[3] = {0, 0, 0};
+  const int window = 10;  // 50 ms, well under what the eye resolves
+  int greenOffWindows = 0, windows = 0;
+  double worst = 0;
+  uint32_t sum[3] = {0, 0, 0};
+  int lastRedTenths = -1, redLevels = 0;
+  for (uint32_t ms = 0; ms < 4800; ms += 5) {  // one breath at speed 128 is about 3.0 s
+    scene.ms = ms;
+    const Rgb8 p = scenePixel(grid, scene, 9);
+    const uint8_t in[3] = {p.r, p.g, p.b};
+    for (int k = 0; k < 3; k++) sum[k] += ditherLevel(outputLevel(in[k], level), residue[k]);
+    if ((ms / 5 + 1) % window == 0) {
+      windows++;
+      if (sum[1] == 0 && sum[0] > 0) greenOffWindows++;
+      if (sum[0] > 0) {
+        const double ratio = static_cast<double>(sum[1]) / sum[0];  // 0x40 / 0xff = 0.25 for this orange
+        const double off = ratio > 0.251 ? ratio - 0.251 : 0.251 - ratio;
+        if (off > worst) worst = off;
+      }
+      const int tenths = static_cast<int>(sum[0] * 10 / window);
+      if (tenths != lastRedTenths) redLevels++;
+      lastRedTenths = tenths;
+      sum[0] = sum[1] = sum[2] = 0;
+    }
+  }
+  TEST_ASSERT_EQUAL(0, greenOffWindows);
+  TEST_ASSERT_TRUE_MESSAGE(worst < 0.12, "orange's green stays near a quarter of its red through the breath");
+  TEST_ASSERT_TRUE_MESSAGE(redLevels > 60, "the fade has far more than 15 steps");
+
+  // A light that is not moving rounds once, so a still color never shimmers.
+  TEST_ASSERT_EQUAL_UINT8(16, roundLevel(outputLevel(255, 16)));
+  TEST_ASSERT_EQUAL_UINT8(4, roundLevel(outputLevel(0x40, 16)));
+  TEST_ASSERT_EQUAL_UINT8(255, roundLevel(outputLevel(255, 255)));
+  TEST_ASSERT_EQUAL_UINT8(0, roundLevel(outputLevel(0, 255)));
+  // Dithering never runs past the top and averages exactly.
+  uint8_t r = 255;
+  TEST_ASSERT_EQUAL_UINT8(255, ditherLevel(outputLevel(255, 255), r));
+  r = 0;
+  uint32_t total = 0;
+  for (int i = 0; i < 256; i++) total += ditherLevel(outputLevel(0x24, 16), r);  // pink's green: 2.26 steps
+  TEST_ASSERT_UINT32_WITHIN(1, 578, total);
+}
+
 static void test_brightness_cap_maps_1_to_255_onto_1_to_cap() {
   TEST_ASSERT_EQUAL_UINT8(16, capBrightness(255, 16));
   TEST_ASSERT_EQUAL_UINT8(1, capBrightness(1, 16));
@@ -289,7 +386,18 @@ static void test_test_lights_a_color_and_refuses_bad_requests() {
   TEST_ASSERT_EQUAL_UINT8(255, t.color.r);
   TEST_ASSERT_EQUAL_UINT8(0, t.color.g);
   TEST_ASSERT_EQUAL_STRING("test pin=5 count=60 color=ff0000", out);
+  TEST_ASSERT_FALSE(t.split);
   TEST_ASSERT_TRUE(staged == fresh);  // a test never stages a change
+
+  // Two colors compare side by side: the second takes the second half.
+  TEST_ASSERT_EQUAL(Action::Test, handleCommand("test 5 64 8000ff ff00ff", "esp32s3", fresh, staged, out, sizeof(out), &t));
+  TEST_ASSERT_TRUE(t.split);
+  TEST_ASSERT_EQUAL_UINT8(0x80, t.color.r);
+  TEST_ASSERT_EQUAL_UINT8(0xff, t.second.r);
+  TEST_ASSERT_EQUAL_UINT8(0x00, t.second.g);
+  TEST_ASSERT_EQUAL_STRING("test pin=5 count=64 color=8000ff second=ff00ff", out);
+  TEST_ASSERT_EQUAL(Action::None, handleCommand("test 5 64 8000ff pink", "esp32s3", fresh, staged, out, sizeof(out), &t));
+  TEST_ASSERT_NOT_NULL(strstr(out, "six hex digits"));
 
   TEST_ASSERT_EQUAL(Action::TestOff, handleCommand("test off", "esp32s3", fresh, staged, out, sizeof(out), &t));
   TEST_ASSERT_EQUAL(Action::None, handleCommand("test 26 8 ff0000", "esp32s3", fresh, staged, out, sizeof(out), &t));
@@ -343,9 +451,9 @@ static void test_export_replays_to_the_same_settings() {
   // A wired-up strip, a serpentine grid, and an RGB LED with no button.
   Settings custom{};
   Settings staged{};
-  for (const char* setup : {"pixels 5 30 0; order grb; serpentine off; max 200; button 9",
-                            "pixels 5 64 8; order bgr; serpentine on; max 1; button none",
-                            "rgb 4 5 6; anode on; max 255; button none"}) {
+  for (const char* setup : {"pixels 5 30 0; order grb; serpentine off; max 200; button 9; link bluetooth",
+                            "pixels 5 64 8; order bgr; serpentine on; max 1; button none; link bluetooth",
+                            "rgb 4 5 6; anode on; max 255; button none; link wifi"}) {
     custom = Settings{};
     replay(setup, "esp32s3", custom);
     handleCommand("export", "esp32s3", custom, staged, out, sizeof(out));
@@ -358,13 +466,123 @@ static void test_export_replays_to_the_same_settings() {
 
 static void test_help_fits_and_lists_every_command() {
   Settings s;
-  char out[1200];
+  char out[REPLY_SIZE];
   run("help", s, s, out, sizeof(out));
   for (const char* word : {"show", "boards", "board <name>", "pixels", "order", "serpentine", "rgb", "anode", "max",
-                           "button", "export", "save", "cancel", "reset", "restart", "pins", "test <pin>", "test off", "about"}) {
+                           "button", "export", "save", "cancel", "reset", "restart", "pins", "test <pin>", "test off", "about",
+                           "screen", "label", "flip", "link", "wifi \"<name>\"", "wifi list", "wifi forget"}) {
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, word), word);
   }
   TEST_ASSERT_LESS_THAN(sizeof(out) - 1, strlen(out));
+}
+
+// One firmware for Bluetooth and Wi-Fi lights, LEDs and the T-Display's screen (Hans, 2026-11-09).
+static void test_link_screen_label_and_flip_round_trip_and_replay() {
+  // Settings saved before these existed read as Bluetooth, with the name shown and not flipped.
+  Settings old = findPreset("s3-matrix")->settings;
+  uint8_t b[STORED_SIZE];
+  encodeSettings(old, b);
+  TEST_ASSERT_EQUAL_UINT8(0, b[14]);
+  TEST_ASSERT_EQUAL_UINT8(0, b[7] & 0x0c);
+  Settings back;
+  TEST_ASSERT_TRUE(decodeSettings(b, STORED_SIZE, back));
+  TEST_ASSERT_TRUE(back.link == Link::Bluetooth && back.label && !back.flip);
+
+  Settings td = findPreset("tdisplay")->settings;
+  TEST_ASSERT_TRUE(td.output == Output::Screen);
+  TEST_ASSERT_NULL(problem("esp32", td));
+  TEST_ASSERT_NOT_NULL(problem("esp32s3", td));  // the screen is the T-Display's own
+  td.link = Link::Wifi;
+  td.label = false;
+  td.flip = true;
+  encodeSettings(td, b);
+  TEST_ASSERT_TRUE(decodeSettings(b, STORED_SIZE, back));
+  TEST_ASSERT_TRUE(back == td);
+  b[14] = 2;
+  TEST_ASSERT_FALSE(decodeSettings(b, STORED_SIZE, back));
+  b[14] = 1;
+  b[1] = 4;
+  TEST_ASSERT_FALSE(decodeSettings(b, STORED_SIZE, back));
+
+  // The console sets each one, and export replays to the same settings.
+  Settings running{};
+  Settings staged = running;
+  char out[REPLY_SIZE];
+  TEST_ASSERT_EQUAL(Action::None, handleCommand("board tdisplay", "esp32", running, staged, out, sizeof(out)));
+  TEST_ASSERT_EQUAL(Action::None, handleCommand("link wifi", "esp32", running, staged, out, sizeof(out)));
+  TEST_ASSERT_EQUAL(Action::None, handleCommand("label off", "esp32", running, staged, out, sizeof(out)));
+  TEST_ASSERT_EQUAL(Action::None, handleCommand("flip on", "esp32", running, staged, out, sizeof(out)));
+  TEST_ASSERT_TRUE(staged.link == Link::Wifi && !staged.label && staged.flip);
+  exportCommands(staged, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("screen; label off; flip on; max 200; button 35; link wifi", out);
+  Settings replayed{};
+  char line[64];
+  for (const char* p = out; *p;) {
+    const char* end = strstr(p, "; ");
+    const size_t n = end != nullptr ? static_cast<size_t>(end - p) : strlen(p);
+    snprintf(line, sizeof(line), "%.*s", static_cast<int>(n), p);
+    char reply[REPLY_SIZE];
+    handleCommand(line, "esp32", running, replayed, reply, sizeof(reply));
+    p += n + (end != nullptr ? 2 : 0);
+  }
+  TEST_ASSERT_TRUE(replayed == staged);
+  describe(staged, out, sizeof(out));
+  TEST_ASSERT_NOT_NULL(strstr(out, "over Wi-Fi"));
+
+  // The ESP32-H2 has no Wi-Fi, and only the ESP32 has the T-Display's screen.
+  Settings h2 = findPreset("h2-devkitm")->settings;
+  Settings h2staged = h2;
+  handleCommand("link wifi", "esp32h2", h2, h2staged, out, sizeof(out));
+  TEST_ASSERT_TRUE(h2staged.link == Link::Bluetooth);
+  TEST_ASSERT_NOT_NULL(strstr(out, "no Wi-Fi"));
+  h2.link = Link::Wifi;
+  TEST_ASSERT_NOT_NULL(problem("esp32h2", h2));
+  handleCommand("screen", "esp32c3", running, staged, out, sizeof(out));
+  TEST_ASSERT_NOT_NULL(strstr(out, "only on the LilyGO T-Display"));
+
+  // A screen has its own animations, all of them over the color.
+  size_t count = 0;
+  const EffectInfo* fx = effectsFor(Output::Screen, count);
+  TEST_ASSERT_EQUAL(4, count);
+  TEST_ASSERT_TRUE(hasEffect(fx, count, EFFECT_SNOW) && hasEffect(fx, count, EFFECT_LEAVES));
+  TEST_ASSERT_FALSE(hasEffect(fx, count, EFFECT_RAINBOW));
+  fx = effectsFor(Output::Pixels, count);
+  TEST_ASSERT_FALSE(hasEffect(fx, count, EFFECT_SNOW));
+}
+
+// Hans, 2026-11-09: a blink to tell several lights apart.
+static void test_identify_blinks_six_times_then_stops() {
+  int flashes = 0;
+  bool last = false;
+  for (uint32_t ms = 0; ms < IDENTIFY_MS + 1000; ms += 10) {
+    const bool lit = identifyLit(ms);
+    if (lit && !last) flashes++;
+    last = lit;
+  }
+  TEST_ASSERT_EQUAL(6, flashes);
+  TEST_ASSERT_TRUE(identifyLit(0));
+  TEST_ASSERT_FALSE(identifyLit(260));
+  TEST_ASSERT_FALSE(identifyLit(IDENTIFY_MS));
+  TEST_ASSERT_FALSE(identifyLit(IDENTIFY_MS + 10));
+}
+
+// Wi-Fi and Bluetooth both say which board a light is: its preset's description, whatever its link, label, or flip,
+// or Custom for wiring set by hand or a preset from another chip.
+static void test_board_name_follows_the_wiring_only() {
+  for (size_t i = 0; i < PRESET_COUNT; i++) {
+    const Preset& p = PRESETS[i];
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(p.board, boardName(p.settings, p.chip), p.name);
+    Settings chosen = p.settings;
+    chosen.link = chosen.link == Link::Wifi ? Link::Bluetooth : Link::Wifi;
+    chosen.label = !chosen.label;
+    chosen.flip = !chosen.flip;
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(p.board, boardName(chosen, p.chip), p.name);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("Custom", boardName(p.settings, "not-a-chip"), p.name);
+    Settings moved = p.settings;
+    moved.maxBrightness = static_cast<uint8_t>(moved.maxBrightness == 1 ? 2 : moved.maxBrightness - 1);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("Custom", boardName(moved, p.chip), p.name);
+  }
+  TEST_ASSERT_EQUAL_STRING("Custom", boardName(Settings{}, "esp32s3"));
 }
 
 int main() {
@@ -376,7 +594,9 @@ int main() {
   RUN_TEST(test_stale_markers_are_grid_corners_and_strip_ends);
   RUN_TEST(test_the_alive_pixel_is_in_the_middle);
   RUN_TEST(test_scene_shows_nothing_off_alive_stale_and_fresh);
+  RUN_TEST(test_scene_sends_led_values);
   RUN_TEST(test_brightness_cap_maps_1_to_255_onto_1_to_cap);
+  RUN_TEST(test_a_dim_breath_keeps_its_hue_and_fades_smoothly);
   RUN_TEST(test_settings_round_trip_and_bad_data_is_refused);
   RUN_TEST(test_console_stages_changes_until_save);
   RUN_TEST(test_console_refuses_bad_pins_and_values);
@@ -386,5 +606,8 @@ int main() {
   RUN_TEST(test_a_known_command_with_wrong_arguments_shows_its_usage);
   RUN_TEST(test_export_replays_to_the_same_settings);
   RUN_TEST(test_help_fits_and_lists_every_command);
+  RUN_TEST(test_link_screen_label_and_flip_round_trip_and_replay);
+  RUN_TEST(test_identify_blinks_six_times_then_stops);
+  RUN_TEST(test_board_name_follows_the_wiring_only);
   return UNITY_END();
 }
