@@ -53,7 +53,7 @@ def main():
         builds.append({"chipFamily": family, "parts": [{"path": f"firmware/{name}", "offset": 0}]})
 
     manifest = {
-        "name": "CheerLights BLE firmware",
+        "name": "CheerLights firmware",
         "version": version,
         "home_assistant_domain": None,
         "new_install_prompt_erase": True,
