@@ -96,6 +96,8 @@ A receiver ignores a `Light` value shorter than four bytes or with an unknown ve
 
 Entry 0 is always solid.
 The list depends on the light: LEDs have Solid (0), Breathe (1), Sparkle (2), Ripple (3), and Rainbow (4), and a screen has Solid (0), Sparkle (2), Snow (5), and Leaves (6).
+The Waveshare ESP32-S3-Matrix, the one preset with a motion sensor, also has Flow (7) from firmware 0.6.0: liquid in the color that runs toward whichever side of the board is lower.
+Flow's speed runs from thick and slow to thin and quick.
 Flag bit 0 means the effect shows the color it is sent, such as by dimming or sparkling it.
 An effect without it draws its own colors, such as a rainbow.
 A phone following the CheerLights color offers only effects with bit 0 set, and a receiver ignores flag bits it does not know.

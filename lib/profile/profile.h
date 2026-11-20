@@ -86,6 +86,7 @@ enum EffectId : uint8_t {
   EFFECT_RAINBOW = 4,
   EFFECT_SNOW = 5,    // a screen only
   EFFECT_LEAVES = 6,  // a screen only
+  EFFECT_FLOW = 7,    // a grid with a motion sensor: liquid in the color that runs where the board tips it
 };
 
 constexpr uint8_t EFFECTS_VERSION = 3;
@@ -101,6 +102,9 @@ struct EffectInfo {
 // The LED animations.
 extern const EffectInfo EFFECTS[];
 extern const size_t EFFECT_COUNT;
+// The LED animations on a grid with a motion sensor: the same, and Flow.
+extern const EffectInfo MOTION_EFFECTS[];
+extern const size_t MOTION_EFFECT_COUNT;
 // A screen's animations, drawn over the color.
 extern const EffectInfo SCREEN_EFFECTS[];
 extern const size_t SCREEN_EFFECT_COUNT;

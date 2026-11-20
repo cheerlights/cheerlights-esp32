@@ -19,11 +19,14 @@
 
 namespace cheerlights {
 
-const char FW_TEXT[] = "0.5.0";
-static_assert(FW_MAJOR == 0 && FW_MINOR == 5 && FW_PATCH == 0, "FW_TEXT matches the version");
+const char FW_TEXT[] = "0.6.0";
+static_assert(FW_MAJOR == 0 && FW_MINOR == 6 && FW_PATCH == 0, "FW_TEXT matches the version");
 
 Settings settings;
 Scene scene{};
+TextShow textShow;
+Flow flow;
+bool motion = false;  // a motion sensor answered, so the light has Flow
 char deviceName[9] = "CL-0000";
 char hostName[17] = "cheerlights-0000";
 
@@ -98,7 +101,7 @@ void render() {
     return;
   }
   if (settings.output == Output::Pixels && strip != nullptr) {
-    const bool moving = sceneMoves(scene);
+    const bool moving = sceneMoves(settings, scene);
     for (int i = 0; i < settings.count; i++) {
       const Rgb8 p = scenePixel(settings, scene, i);
       const uint8_t in[3] = {p.r, p.g, p.b};
@@ -203,6 +206,23 @@ void runCommand(const char* line) {
     // Replies go out whole: a network name can be long, and the log line has a fixed size.
     logText(reply);
     logText("\n");
+    return;
+  }
+  if (strcmp(line, "motion") == 0) {
+    float x = 0, y = 0, z = 0;
+    if (readGravity(x, y, z)) {
+      logf("motion x=%.2f y=%.2f z=%.2f\n", x, y, z);
+    } else {
+      logf("motion none\n");
+    }
+    return;
+  }
+  ScrollText text = textShow.text;
+  const TextAction textAction = handleTextCommand(line, canScroll(settings), text, reply, sizeof(reply));
+  if (textAction != TextAction::NotText) {
+    logText(reply);
+    logText("\n");
+    if (textAction == TextAction::Changed) textChanged(text);
     return;
   }
   TestRequest test{};
@@ -315,6 +335,26 @@ void pollButtons() {
   if (pressed(infoButton)) screenInfo();
 }
 
+// Steps the liquid through the time that passed, reading gravity before each step. It runs only while Flow
+// shows, and catches up at most a few steps, so a long pause (a restart of Wi-Fi, a slow write) does not stall it.
+void serviceFlow() {
+  static uint32_t lastStepAt = 0;
+  const uint32_t now = millis();
+  if (!motion || scene.light.effect != EFFECT_FLOW || !sceneMoves(scene)) {
+    lastStepAt = now;
+    return;
+  }
+  constexpr uint32_t STEP_MS = static_cast<uint32_t>(FLOW_STEP_S * 1000.0f + 0.5f);
+  int steps = static_cast<int>((now - lastStepAt) / STEP_MS);
+  if (steps == 0) return;
+  lastStepAt += static_cast<uint32_t>(steps) * STEP_MS;
+  if (steps > 4) steps = 4;
+  float sx = 0, sy = 0, sz = 0, gx = 0, gy = 0;
+  if (!readGravity(sx, sy, sz)) return;
+  matrixGravity(sx, sy, gx, gy);
+  for (int i = 0; i < steps; i++) flow.step(gx, gy, scene.light.speed);
+}
+
 void makeNames() {
   const uint64_t mac = ESP.getEfuseMac();
   snprintf(deviceName, sizeof(deviceName), "CL-%02X%02X", static_cast<uint8_t>(mac >> 32),
@@ -355,7 +395,26 @@ void lightChanged(const Light& light) {
   logf("light brightness=%u effect=%u speed=%u\n", light.brightness, light.effect, light.speed);
 }
 
-const EffectInfo* lightEffects(size_t& count) { return effectsFor(settings.output, count); }
+const EffectInfo* lightEffects(size_t& count) { return effectsFor(settings.output, motion, count); }
+
+const ScrollText& currentText() { return textShow.text; }
+
+void textChanged(const ScrollText& text) {
+  if (!canScroll(settings) || text == textShow.text) return;
+  const bool restart = strcmp(text.message, textShow.text.message) != 0 || text.on != textShow.text.on ||
+                       text.speed != textShow.text.speed;
+  textShow.text = text;
+  layoutText(text.message, textShow.strip);
+  // New words, or words turned on, come in from the right edge, so they are read from the start.
+  if (restart) textShow.since = millis();
+  uint8_t stored[TEXT_STORED_SIZE];
+  encodeText(text, stored);
+  prefs.putBytes("text", stored, TEXT_STORED_SIZE);
+  char line[140];
+  describeText(text, line, sizeof(line));
+  logf("%s\n", line);
+  render();
+}
 
 void identify() {
   blinking = true;
@@ -394,11 +453,23 @@ void setup() {
   prefs.begin("cheerlights");
   loadSettings();
   scene.off = prefs.getBool("off", false);  // the wearer's off choice survives a restart
+  motion = startMotion();
+  if (motion) {
+    const Layout l = layoutOf(settings);
+    flow.reset(l.width, l.height);
+    scene.flow = &flow;
+  }
   uint8_t savedLight[LIGHT_SIZE];
   if (prefs.getBytes("light", savedLight, LIGHT_SIZE) == LIGHT_SIZE) parseLight(savedLight, LIGHT_SIZE, scene.light);
   size_t effectCount = 0;
   const EffectInfo* effects = lightEffects(effectCount);
   if (!hasEffect(effects, effectCount, scene.light.effect)) scene.light.effect = EFFECT_SOLID;
+  uint8_t savedText[TEXT_STORED_SIZE];
+  if (prefs.getBytes("text", savedText, TEXT_STORED_SIZE) == TEXT_STORED_SIZE) {
+    decodeText(savedText, TEXT_STORED_SIZE, textShow.text);
+    layoutText(textShow.text.message, textShow.strip);
+  }
+  scene.text = &textShow;
   // Input-only pins (GPIO 34 to 39 on the ESP32) have no pull-up inside the chip; boards wire one on the board.
   if (settings.buttonPin >= 0) {
     pinMode(settings.buttonPin, pinUsable(CL_CHIP, settings.buttonPin, true) ? INPUT_PULLUP : INPUT);
@@ -437,11 +508,13 @@ void loop() {
     prefs.putBytes("light", value, LIGHT_SIZE);
     lightUnsaved = false;
   }
+  serviceFlow();
   static uint32_t lastFrameAt = 0;
   static bool wasBlinking = false;
   bool lit = false;
   const bool blinkingNow = identifying(lit);
-  const bool redraw = blinkingNow || wasBlinking || sceneMoves(scene);  // one more frame puts the color back
+  // One more frame after a blink puts the color back.
+  const bool redraw = blinkingNow || wasBlinking || sceneMoves(settings, scene);
   wasBlinking = blinkingNow;
   if (settings.output != Output::Screen && redraw && millis() - lastFrameAt >= FRAME_INTERVAL_MS) {
     lastFrameAt = millis();

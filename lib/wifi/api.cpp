@@ -59,7 +59,7 @@ size_t writeInfo(const DeviceInfo& info, char* out, size_t size) {
 }
 
 size_t writeState(const LightState& state, const CheerLightsState& cheerlights, const EffectInfo* effects,
-                  size_t effectCount, char* out, size_t size) {
+                  size_t effectCount, bool scrolls, char* out, size_t size) {
   JsonDocument doc;
   doc["mode"] = state.fun ? "fun" : "cheerlights";
   char hex[8];
@@ -89,11 +89,25 @@ size_t writeState(const LightState& state, const CheerLightsState& cheerlights, 
     e["name"] = effects[i].name;
     e["showsColor"] = (effects[i].flags & EFFECT_SHOWS_COLOR) != 0;
   }
+  if (scrolls) {
+    JsonObject t = doc["text"].to<JsonObject>();
+    t["message"] = state.text.message;
+    t["on"] = state.text.on;
+    if (state.text.autoColor) {
+      t["color"] = "auto";
+    } else {
+      hexText(state.text.color, hex);
+      t["color"] = hex;
+    }
+    t["speed"] = state.text.speed;
+    t["turn"] = state.text.turn * 90;
+    t["max"] = TEXT_MAX;
+  }
   if (measureJson(doc) + 1 > size) return 0;
   return serializeJson(doc, out, size);
 }
 
-const char* applyState(const char* body, size_t length, const EffectInfo* effects, size_t effectCount,
+const char* applyState(const char* body, size_t length, const EffectInfo* effects, size_t effectCount, bool scrolls,
                        LightState& state) {
   JsonDocument doc;
   if (deserializeJson(doc, body, length) != DeserializationError::Ok) return "The body is not JSON.";
@@ -134,6 +148,44 @@ const char* applyState(const char* body, size_t length, const EffectInfo* effect
   if (!next.fun && (effectFlags(effects, effectCount, next.light.effect) & EFFECT_SHOWS_COLOR) == 0) {
     if (!effect.isNull()) return "In CheerLights mode the light takes only effects that show the color.";
     next.light.effect = EFFECT_SOLID;
+  }
+  JsonVariantConst text = doc["text"];
+  if (!text.isNull()) {
+    if (!scrolls) return "This light cannot show text. It needs a grid of at least 8 by 8 LEDs.";
+    if (!text.is<JsonObjectConst>()) return "text is an object, such as {\"message\": \"Hello\", \"on\": true}.";
+    JsonVariantConst message = text["message"];
+    if (!message.isNull()) {
+      if (!message.is<const char*>()) return "text.message is a string.";
+      const char* why = normalizeText(message.as<const char*>(), next.text.message);
+      if (why != nullptr) return why;
+    }
+    JsonVariantConst on = text["on"];
+    if (!on.isNull()) {
+      if (!on.is<bool>()) return "text.on is true or false.";
+      next.text.on = on.as<bool>();
+    }
+    JsonVariantConst color = text["color"];
+    if (!color.isNull()) {
+      const char* c = color.is<const char*>() ? color.as<const char*>() : "";
+      if (strcmp(c, "auto") == 0) {
+        next.text.autoColor = true;
+      } else if (parseHexText(c, next.text.color)) {
+        next.text.autoColor = false;
+      } else {
+        return "text.color is auto or a color such as #ffffff.";
+      }
+    }
+    JsonVariantConst textSpeed = text["speed"];
+    if (!textSpeed.isNull() && !level(textSpeed, next.text.speed)) return "text.speed is a whole number, 1 to 255.";
+    JsonVariantConst turn = text["turn"];
+    if (!turn.isNull()) {
+      const int degrees = turn.is<int>() ? turn.as<int>() : -1;
+      if (degrees != 0 && degrees != 90 && degrees != 180 && degrees != 270) {
+        return "text.turn is 0, 90, 180, or 270 degrees, clockwise.";
+      }
+      next.text.turn = static_cast<uint8_t>(degrees / 90);
+    }
+    if (next.text.on && next.text.message[0] == '\0') return "There are no words yet. Add some, then turn the text on.";
   }
   state = next;
   return nullptr;

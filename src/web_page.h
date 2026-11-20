@@ -1,7 +1,7 @@
 // The page a Wi-Fi light serves at /: which light this is (with Blink), the color it shows, Fun or CheerLights mode,
-// the fun palette and any color, its animations, speed for LED lights, and brightness.
+// the fun palette and any color, its animations, speed for LED lights, brightness, and scrolling text on a grid.
 // It uses the same API as the app (docs/wifi.md), loads nothing from the internet, and must stay one document
-// small enough for flash (about 16 KB). The literal must never contain the closing delimiter.
+// small enough for flash (about 20 KB). The literal must never contain the closing delimiter.
 #pragma once
 
 namespace cheerlights {
@@ -49,6 +49,13 @@ legend,.range label,h2{display:block;padding:0;margin:0 0 12px;font-size:16px;fo
 .seg label,.fx label{position:relative}
 .seg span{display:flex;align-items:center;justify-content:center;min-height:48px;font-weight:600;cursor:pointer}
 .seg span:hover{background:var(--surface)}
+.seg3{grid-template-columns:1fr 1fr 1fr}
+.seg4{grid-template-columns:repeat(4,1fr)}
+.seg label+label span{border-left:1px solid var(--ink)}
+.txs{margin-top:20px}
+.tx{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.tx input{font:inherit;min-height:48px;min-width:0;padding:0 12px;border:1px solid var(--ink);border-radius:6px;background:var(--surface);color:var(--ink)}
+.sub{display:block;margin:20px 0 10px;font-weight:700}
 .seg input:checked+span,.fx input:checked+span{background:var(--ink);color:var(--ground);border-color:var(--ink)}
 .seg input:focus-visible+span{outline:3px solid var(--focus);outline-offset:-6px}
 .bulbs{display:grid;grid-template-columns:repeat(6,1fr);row-gap:14px;isolation:isolate}
@@ -125,6 +132,20 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:56px;align-items
 </fieldset>
 <div class="range" id="speedrow" hidden><label for="speed">Speed</label><output id="sv" for="speed"></output><input type="range" id="speed" min="1" max="255"></div>
 <div class="range"><label for="bright">Brightness</label><output id="bv" for="bright"></output><input type="range" id="bright" min="1" max="255"></div>
+<fieldset id="txt" hidden>
+<legend>Scrolling text</legend>
+<div class="tx"><input type="text" id="tw" maxlength="64" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-label="Your words" aria-describedby="twhint"><button class="btn" id="tset" type="button">Show</button></div>
+<p class="hint" id="twhint">Your words scroll over the color on this light only. Use up to 64 characters: letters, numbers, spaces, and keyboard punctuation.</p>
+<span class="sub" id="tonl">Text</span>
+<div class="seg" role="radiogroup" aria-labelledby="tonl"><label><input class="r" type="radio" name="ton" value="1"><span>On</span></label><label><input class="r" type="radio" name="ton" value="0"><span>Off</span></label></div>
+<span class="sub" id="tcl">Letters</span>
+<div class="seg seg3" role="radiogroup" aria-labelledby="tcl" aria-describedby="tchint"><label><input class="r" type="radio" name="tc" value="auto"><span>Auto</span></label><label><input class="r" type="radio" name="tc" value="#ffffff"><span>White</span></label><label><input class="r" type="radio" name="tc" value="#000000"><span>Dark</span></label></div>
+<p class="hint" id="tchint">Auto picks white letters on a dark color and dark ones on a light color, so they stay readable as the color changes. Dark letters are LEDs turned off.</p>
+<span class="sub" id="ttl">Turn</span>
+<div class="seg seg4" role="radiogroup" aria-labelledby="ttl" aria-describedby="tthint"><label><input class="r" type="radio" name="tt" value="0"><span>0&deg;</span></label><label><input class="r" type="radio" name="tt" value="90"><span>90&deg;</span></label><label><input class="r" type="radio" name="tt" value="180"><span>180&deg;</span></label><label><input class="r" type="radio" name="tt" value="270"><span>270&deg;</span></label></div>
+<p class="hint" id="tthint">If the letters are sideways or upside down, turn them until they read upright.</p>
+<div class="range txs"><label for="tsp">Text speed</label><output id="tsv" for="tsp"></output><input type="range" id="tsp" min="1" max="255"></div>
+</fieldset>
 </fieldset>
 <section class="setup" aria-labelledby="setuph">
 <h2 id="setuph">Wi-Fi and wiring</h2>
@@ -140,7 +161,7 @@ const PALETTE=[["red","#ff0000"],["green","#008000"],["blue","#0000ff"],["cyan",
 const OUT={pixels:"its LEDs",rgb:"its RGB LED",screen:"its screen"};
 const DARK="#0c0d0f",LIGHT="#fbfbfa";
 const $=id=>document.getElementById(id),E=t=>document.createElement(t),N=n=>document.getElementsByName(n);
-let S=null,I=null,gen=0,heard=0,down=false,fxKey="",holdB=0,holdS=0,holdP=0,tB,tS,tP,msgKind="";
+let S=null,I=null,gen=0,heard=0,down=false,fxKey="",holdB=0,holdS=0,holdP=0,holdT=0,tB,tS,tP,tT,msgKind="",twEdited=false;
 const api=(p,body)=>fetch("/api/v1/"+p,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{cache:"no-store"});
 function lum(h){const c=[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255).map(v=>v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4));return .2126*c[0]+.7152*c[1]+.0722*c[2];}
 function inkFor(h){const L=lum(h);return (L+.05)/(lum(DARK)+.05)>=(lum(LIGHT)+.05)/(L+.05)?DARK:LIGHT;}
@@ -197,15 +218,21 @@ function render(){
  if(Date.now()-holdB>1500)$("bright").value=S.brightness;
  if(Date.now()-holdS>1500)$("speed").value=S.speed;
  $("bv").textContent=pct($("bright").value);$("sv").textContent=pace($("speed").value);
+ const T=S.text;$("txt").hidden=!T;
+ if(T){if(!twEdited&&document.activeElement!==$("tw"))$("tw").value=T.message;$("tw").maxLength=T.max||64;
+  for(const r of N("ton")){r.checked=(r.value==="1")===T.on;r.disabled=r.value==="1"&&!T.message;}
+  const tc=T.color.toLowerCase();for(const r of N("tc"))r.checked=r.value===tc;
+  for(const r of N("tt"))r.checked=+r.value===(T.turn||0);
+  if(Date.now()-holdT>1500)$("tsp").value=T.speed;$("tsv").textContent=pace($("tsp").value);}
 }
 async function send(change){
  gen++;hush("refused");
  try{
   const r=await api("state",change);let j={};try{j=await r.json();}catch(e){}
-  if(r.ok){S=j;heard=Date.now();if(down){down=false;$("ctl").disabled=false;hush("down");}}
-  else say(who()+" did not take that change"+(j.error?": "+j.error:"."),"refused");
+  if(r.ok){S=j;heard=Date.now();if(down){down=false;$("ctl").disabled=false;hush("down");}render();return true;}
+  say(who()+" did not take that change"+(j.error?": "+j.error:"."),"refused");
  }catch(e){say(who()+" did not answer, so nothing changed. Check that it is on and on this Wi-Fi.","down");}
- render();
+ render();return false;
 }
 async function load(){
  const g=gen;
@@ -224,6 +251,15 @@ for(const r of N("mode"))r.onchange=()=>send({mode:r.value});
 $("any").oninput=e=>{holdP=Date.now();clearTimeout(tP);tP=setTimeout(()=>send({fun:{hex:e.target.value}}),150);};
 $("bright").oninput=e=>{holdB=Date.now();$("bv").textContent=pct(e.target.value);clearTimeout(tB);tB=setTimeout(()=>send({brightness:+e.target.value}),150);};
 $("speed").oninput=e=>{holdS=Date.now();$("sv").textContent=pace(e.target.value);clearTimeout(tS);tS=setTimeout(()=>send({speed:+e.target.value}),150);};
+// The words stay as typed until the light takes them, then show as the light keeps them, with plain quotes.
+async function showText(){const m=$("tw").value.trim();if(await send({text:m?{message:m,on:true}:{message:"",on:false}})){twEdited=false;$("tw").value=S.text.message;}}
+$("tw").oninput=()=>{twEdited=true;};
+$("tw").onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();showText();}};
+$("tset").onclick=showText;
+for(const r of N("ton"))r.onchange=()=>send({text:{on:r.value==="1"}});
+for(const r of N("tc"))r.onchange=()=>send({text:{color:r.value}});
+for(const r of N("tt"))r.onchange=()=>send({text:{turn:+r.value}});
+$("tsp").oninput=e=>{holdT=Date.now();$("tsv").textContent=pace(e.target.value);clearTimeout(tT);tT=setTimeout(()=>send({text:{speed:+e.target.value}}),150);};
 $("retry").onclick=load;
 $("blink").onclick=async()=>{
  const b=$("blink");b.disabled=true;b.textContent="Blinking";

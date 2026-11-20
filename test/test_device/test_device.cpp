@@ -470,7 +470,8 @@ static void test_help_fits_and_lists_every_command() {
   run("help", s, s, out, sizeof(out));
   for (const char* word : {"show", "boards", "board <name>", "pixels", "order", "serpentine", "rgb", "anode", "max",
                            "button", "export", "save", "cancel", "reset", "restart", "pins", "test <pin>", "test off", "about",
-                           "screen", "label", "flip", "link", "wifi \"<name>\"", "wifi list", "wifi forget"}) {
+                           "screen", "label", "flip", "link", "wifi \"<name>\"", "wifi list", "wifi forget", "text \"<words>\"",
+                           "text turn", "motion"}) {
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, word), word);
   }
   TEST_ASSERT_LESS_THAN(sizeof(out) - 1, strlen(out));
@@ -542,11 +543,11 @@ static void test_link_screen_label_and_flip_round_trip_and_replay() {
 
   // A screen has its own animations, all of them over the color.
   size_t count = 0;
-  const EffectInfo* fx = effectsFor(Output::Screen, count);
+  const EffectInfo* fx = effectsFor(Output::Screen, false, count);
   TEST_ASSERT_EQUAL(4, count);
   TEST_ASSERT_TRUE(hasEffect(fx, count, EFFECT_SNOW) && hasEffect(fx, count, EFFECT_LEAVES));
   TEST_ASSERT_FALSE(hasEffect(fx, count, EFFECT_RAINBOW));
-  fx = effectsFor(Output::Pixels, count);
+  fx = effectsFor(Output::Pixels, false, count);
   TEST_ASSERT_FALSE(hasEffect(fx, count, EFFECT_SNOW));
 }
 

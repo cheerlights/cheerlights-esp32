@@ -4,14 +4,16 @@
 #include <stdint.h>
 
 #include "profile.h"
+#include "text.h"
 
 namespace cheerlights {
 
-// What the owner chose: the mode, the fun color, and the light (brightness, effect, speed).
+// What the owner chose: the mode, the fun color, the light (brightness, effect, speed), and the scrolling text.
 struct LightState {
   bool fun = false;  // false follows CheerLights
   Rgb8 funColor{0xff, 0x00, 0xff};
   Light light;
+  ScrollText text;
 };
 
 // The last CheerLights color, and whether the light is still hearing from CheerLights.
@@ -31,13 +33,17 @@ struct DeviceInfo {
 
 constexpr int API_VERSION = 1;
 
-// Each writes the JSON text and returns its length, or 0 if it does not fit.
+// Room for the longest state: every effect, and 64 characters of text that each need escaping.
+constexpr size_t STATE_JSON_SIZE = 1536;
+
+// Each writes the JSON text and returns its length, or 0 if it does not fit. scrolls is true on a light that can
+// show text, and only such a light reports text, so a client offers it only where it works.
 size_t writeInfo(const DeviceInfo& info, char* out, size_t size);
 size_t writeState(const LightState& state, const CheerLightsState& cheerlights, const EffectInfo* effects,
-                  size_t effectCount, char* out, size_t size);
+                  size_t effectCount, bool scrolls, char* out, size_t size);
 
 // Applies a POST body to state, all or nothing: nullptr when it applied, or why it did not, for the 400 reply.
-const char* applyState(const char* body, size_t length, const EffectInfo* effects, size_t effectCount,
+const char* applyState(const char* body, size_t length, const EffectInfo* effects, size_t effectCount, bool scrolls,
                        LightState& state);
 
 // The frame the light shows: the CheerLights color in CheerLights mode, dimmed as stale while it is not live,

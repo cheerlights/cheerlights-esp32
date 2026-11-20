@@ -143,10 +143,21 @@ The off choice survives a restart.
 | `wifi list` | The saved networks; the light joins the strongest one in range |
 | `wifi scan` | The networks in range that the board can join, strongest first, each with its signal in dBm, and `saved` or `open` where it applies; a scan takes a few seconds, up to about 8 on a Bluetooth light |
 | `wifi forget "<name>"` | Forget a network, or all of them with `wifi forget all` |
+| `text "<words>"` | Scroll words over the color or the animation, up to 64 characters, saved at once; quotes are needed only when the words are `on`, `off`, or `clear` alone, or start with `color`, `speed`, or `turn` |
+| `text` | The text settings: whether it is on, the words, the letters' color, the speed, and the turn |
+| `text <on\|off\|clear>` | Show the words, hide them and keep them, or forget them |
+| `text color <auto\|white\|dark\|rrggbb>` | The letters' color; `auto` picks white letters on a dark color and dark letters on a light color or an animation that plays its own colors; `dark` leaves the LEDs off where the letters are |
+| `text speed <1-255>` | How fast the words scroll, slow to fast: 4 to 24 columns a second |
+| `text turn <0\|90\|180\|270>` | Rotate the letters clockwise by this many degrees, so they read upright on a grid worn or mounted sideways or upside down |
+| `motion` | The motion sensor's reading in g on the sensor's own axes, as `motion x=<g> y=<g> z=<g>`, on a board that has one; `motion none` when there is no sensor to read |
 | `about` | The chip, the firmware version, the name, whether it is set up, the link, and on Wi-Fi its address and connection |
 
 `export` prints a line such as `export pixels 14 64 8; order rgb; serpentine on; max 16; button 0`.
 Typing each of those commands, then `save`, sets up another board of the same kind the same way.
+
+Text scrolls only on a grid of LEDs 8 by 8 or more, such as the S3-Matrix.
+On any other light, a `text` command answers that the light cannot show text.
+On a Wi-Fi light, the app and the light's page set text too ([wifi.md](wifi.md)).
 
 The limit is 512 addressable LEDs.
 The console refuses pins the chip uses for flash, PSRAM, its USB port, or the serial console, and pins that are input-only.

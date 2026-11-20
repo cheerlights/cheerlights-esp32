@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "flow.h"
 #include "profile.h"
+#include "text.h"
 
 namespace cheerlights {
 
@@ -71,11 +73,16 @@ bool pinUsable(const char* chip, int pin, bool output);
 // Why a set of settings cannot run on this chip, or nullptr when it can.
 const char* problem(const char* chip, const Settings& s);
 
+// The I2C pins of the board's motion sensor, for a board whose wiring is a preset with one: the Waveshare
+// ESP32-S3-Matrix's QMI8658 on GPIO 11 and 12. False for every other board, including any wired by hand, so the
+// firmware never drives a pin it was not told about.
+bool motionPins(const Settings& s, const char* chip, int& sda, int& scl);
+
 // Whether this chip has Wi-Fi; the ESP32-H2 does not.
 bool chipHasWifi(const char* chip);
 
-// The animations this light has, which depend on its output.
-const EffectInfo* effectsFor(Output output, size_t& count);
+// The animations this light has, which depend on its output and whether it has a motion sensor that answered.
+const EffectInfo* effectsFor(Output output, bool motion, size_t& count);
 
 // Layout: column and row of pixel i, with serpentine rows reversed on odd rows.
 struct Layout {
@@ -91,6 +98,16 @@ bool isMarker(const Settings& s, int index);
 // The pixel lit before any color arrives, so a fresh device shows it is alive.
 int alivePixel(const Settings& s);
 
+// Whether a light can scroll text: a grid of LEDs at least TEXT_ROWS each way, so the letters fit at any turn.
+bool canScroll(const Settings& s);
+
+// The owner's text, laid out, and when it last started at the right edge.
+struct TextShow {
+  ScrollText text;
+  TextStrip strip;
+  uint32_t since = 0;
+};
+
 // The value pixel i is sent before the brightness cap, for everything the device can be showing. Colors are LED
 // values already (ledBase), so the output sends them as they are.
 struct Scene {
@@ -99,9 +116,15 @@ struct Scene {
   bool off;
   Light light;
   uint32_t ms;
+  const TextShow* text = nullptr;  // scrolls over the color while it is on, on a light that can show it
+  const Flow* flow = nullptr;      // the liquid Flow shows, on a grid with a motion sensor
 };
 Rgb8 scenePixel(const Settings& s, const Scene& scene, int index);
 bool sceneMoves(const Scene& scene);
+// Whether the text is scrolling now: it is on, has words, and the light shows a color it can scroll over.
+bool textShowing(const Settings& s, const Scene& scene);
+// Whether the light needs redrawing: an animation, or text scrolling.
+bool sceneMoves(const Settings& s, const Scene& scene);
 
 // Light brightness 1 to 255 becomes 1 to the cap.
 uint8_t capBrightness(uint8_t level, uint8_t cap);
@@ -148,7 +171,7 @@ struct TestRequest {
 };
 
 // The USB console. Changes go to `staged` and take effect on save. A reply, help included, fits in REPLY_SIZE.
-constexpr size_t REPLY_SIZE = 2400;
+constexpr size_t REPLY_SIZE = 3072;
 enum class Action { None, Save, Reset, Restart, About, Test, TestOff };
 Action handleCommand(const char* line, const char* chip, const Settings& running, Settings& staged, char* out,
                      size_t size, TestRequest* test = nullptr);

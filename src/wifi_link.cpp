@@ -169,10 +169,11 @@ const char* outputName() {
 }
 
 void sendState(int code) {
-  static char body[1024];
+  static char body[STATE_JSON_SIZE];
   size_t count = 0;
   const EffectInfo* effects = lightEffects(count);
-  if (writeState(state, cheerlights, effects, count, body, sizeof(body)) == 0) {
+  state.text = currentText();  // the console may have changed it
+  if (writeState(state, cheerlights, effects, count, canScroll(settings), body, sizeof(body)) == 0) {
     server.send(500, "application/json", "{\"error\":\"The state did not fit.\"}");
     return;
   }
@@ -203,8 +204,9 @@ void handlePost() {
   const String& body = server.arg("plain");
   size_t count = 0;
   const EffectInfo* effects = lightEffects(count);
+  state.text = currentText();
   const LightState before = state;
-  const char* why = applyState(body.c_str(), body.length(), effects, count, state);
+  const char* why = applyState(body.c_str(), body.length(), effects, count, canScroll(settings), state);
   if (why != nullptr) {
     logf("api refused reason=%s\n", why);
     sendError(400, why);
@@ -221,6 +223,7 @@ void handlePost() {
       state.light.speed != before.light.speed) {
     lightChanged(state.light);
   }
+  if (state.text != before.text) textChanged(state.text);
   refresh();
   sendState(200);
 }

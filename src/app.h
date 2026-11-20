@@ -11,7 +11,7 @@
 
 namespace cheerlights {
 
-constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 5, FW_PATCH = 0;
+constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 6, FW_PATCH = 0;
 extern const char FW_TEXT[];
 
 // The setup page, short enough to read off a screen.
@@ -31,10 +31,19 @@ void showFrame(const Frame& frame, bool haveColor);
 void lightChanged(const Light& light);
 // The animations this light has.
 const EffectInfo* lightEffects(size_t& count);
+// The owner's scrolling text, and a change to it from the console or the network: shown from the right edge at
+// once and kept in flash. textChanged ignores a light that cannot scroll text.
+const ScrollText& currentText();
+void textChanged(const ScrollText& text);
 // Blink white for IDENTIFY_MS, then go back to the color. identifying() says whether it is blinking and, if so,
 // whether this moment is lit.
 void identify();
 bool identifying(bool& lit);
+
+// The board's motion sensor, where its preset has one (motionPins). readGravity gives the acceleration in g on the
+// sensor's own axes: lying still, it is gravity, about 1 g pointing down.
+bool startMotion();
+bool readGravity(float& x, float& y, float& z);
 
 // Bluetooth (docs/ble-profile.md).
 void startBle();

@@ -86,6 +86,13 @@ const EffectInfo EFFECTS[] = {
 };
 const size_t EFFECT_COUNT = sizeof(EFFECTS) / sizeof(EFFECTS[0]);
 
+const EffectInfo MOTION_EFFECTS[] = {
+    {EFFECT_SOLID, EFFECT_SHOWS_COLOR, "Solid"},     {EFFECT_BREATHE, EFFECT_SHOWS_COLOR, "Breathe"},
+    {EFFECT_SPARKLE, EFFECT_SHOWS_COLOR, "Sparkle"}, {EFFECT_RIPPLE, EFFECT_SHOWS_COLOR, "Ripple"},
+    {EFFECT_RAINBOW, 0, "Rainbow"},                  {EFFECT_FLOW, EFFECT_SHOWS_COLOR, "Flow"},
+};
+const size_t MOTION_EFFECT_COUNT = sizeof(MOTION_EFFECTS) / sizeof(MOTION_EFFECTS[0]);
+
 const EffectInfo SCREEN_EFFECTS[] = {
     {EFFECT_SOLID, EFFECT_SHOWS_COLOR, "Solid"},
     {EFFECT_SPARKLE, EFFECT_SHOWS_COLOR, "Sparkle"},
@@ -220,7 +227,8 @@ Rgb8 ledBase(const Frame& frame) {
 }
 
 bool effectMoves(uint8_t effect) {
-  return effect == EFFECT_BREATHE || effect == EFFECT_SPARKLE || effect == EFFECT_RIPPLE || effect == EFFECT_RAINBOW;
+  return effect == EFFECT_BREATHE || effect == EFFECT_SPARKLE || effect == EFFECT_RIPPLE || effect == EFFECT_RAINBOW ||
+         effect == EFFECT_FLOW;
 }
 
 Rgb8 effectPixel(uint8_t effect, Rgb8 color, uint8_t speed, uint32_t ms, int x, int y, int width, int height) {

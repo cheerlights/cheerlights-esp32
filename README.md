@@ -72,7 +72,10 @@ Some status lines between these are left out.
 - On Wi-Fi: the color over MQTT, up to eight saved networks joined strongest first, `_cheerlights._tcp` over mDNS, and a small HTTP API and page on the light ([Wi-Fi lights](docs/wifi.md)).
 - On Bluetooth: a documented GATT profile, so you can build your own light or app ([BLE profile](docs/ble-profile.md)).
 - Effects picked from the app or the light's page: Solid, Breathe, Sparkle, Ripple, and Rainbow on LEDs; Solid, Sparkle, Snow, and Leaves on the screen.
-- Blink, from the app, flashes a light for three seconds so you can tell which one it is.
+  On the S3-Matrix, Flow reads the board's motion sensor, so liquid in the color runs toward whichever side you tip down.
+  Blink flashes a light for three seconds so you can tell which one it is.
+- Your own words scrolling over the color on a grid of LEDs 8 by 8 or more, such as the S3-Matrix, set over USB, or from the app or the light's page on a Wi-Fi light.
+  Letters switch between white and dark to match the color, and turn in 90-degree steps to suit how the grid is mounted.
 - Settings and Wi-Fi networks change over USB only, and survive flashing a newer release.
   Over the air, a phone or browser can change what the light shows and nothing else.
 
@@ -111,5 +114,6 @@ pio run -e esp32s3
 
 MIT, see [LICENSE](LICENSE).
 Source Sans 3 in `fonts/` is under the SIL Open Font License, see [its license](fonts/SourceSans3-LICENSE.md).
+The 5 by 7 pixel font for scrolling text is from the Adafruit GFX Library, under the BSD license, see [its license](fonts/glcdfont-LICENSE.md).
 CheerLights is a project by Hans Scharler.
 Learn more and join in at [cheerlights.com](https://cheerlights.com).

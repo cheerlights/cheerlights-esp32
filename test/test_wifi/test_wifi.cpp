@@ -163,8 +163,61 @@ static void test_saved_networks_rotate_and_the_strongest_in_range_goes_first() {
 
 // ---- The local API (docs/wifi.md) ----
 
-static const char* post(const char* body, LightState& s) {
-  return applyState(body, strlen(body), EFFECTS, EFFECT_COUNT, s);
+static const char* post(const char* body, LightState& s, bool scrolls = true) {
+  return applyState(body, strlen(body), EFFECTS, EFFECT_COUNT, scrolls, s);
+}
+
+// Only a light that can scroll text reports it, and a light that cannot refuses it and changes nothing.
+static void test_api_text_is_reported_and_changed_only_where_it_scrolls() {
+  char out[STATE_JSON_SIZE];
+  LightState s;
+  CheerLightsState cl{true, {0xff, 0x00, 0x00}, true};
+  writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, sizeof(out));
+  TEST_ASSERT_NULL(strstr(out, "\"text\""));
+  writeState(s, cl, EFFECTS, EFFECT_COUNT, true, out, sizeof(out));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"text\":{\"message\":\"\",\"on\":false,\"color\":\"auto\",\"speed\":128,\"turn\":0,\"max\":64}"));
+
+  const LightState before = s;
+  TEST_ASSERT_EQUAL_STRING("This light cannot show text. It needs a grid of at least 8 by 8 LEDs.",
+                           post("{\"text\":{\"message\":\"Hi\",\"on\":true}}", s, false));
+  TEST_ASSERT_TRUE(s.text == before.text);
+
+  TEST_ASSERT_NULL(post("{\"text\":{\"message\":\"Don\\u2019t panic\",\"on\":true,\"color\":\"#FFFFFF\",\"speed\":200}}", s));
+  TEST_ASSERT_EQUAL_STRING("Don't panic", s.text.message);
+  TEST_ASSERT_TRUE(s.text.on);
+  TEST_ASSERT_FALSE(s.text.autoColor);
+  TEST_ASSERT_TRUE(s.text.color == (Rgb8{0xff, 0xff, 0xff}));
+  TEST_ASSERT_EQUAL(200, s.text.speed);
+  writeState(s, cl, EFFECTS, EFFECT_COUNT, true, out, sizeof(out));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"message\":\"Don't panic\",\"on\":true,\"color\":\"#ffffff\",\"speed\":200"));
+
+  // A field alone changes only itself; a bad field changes nothing, not even the good fields beside it.
+  TEST_ASSERT_NULL(post("{\"text\":{\"on\":false}}", s));
+  TEST_ASSERT_EQUAL_STRING("Don't panic", s.text.message);
+  TEST_ASSERT_FALSE(s.text.on);
+  const LightState kept = s;
+  TEST_ASSERT_NOT_NULL(post("{\"brightness\":9,\"text\":{\"message\":\"snow \\u2603\"}}", s));
+  TEST_ASSERT_NOT_NULL(post("{\"text\":{\"color\":\"red\"}}", s));
+  TEST_ASSERT_NOT_NULL(post("{\"text\":{\"speed\":0}}", s));
+  TEST_ASSERT_NOT_NULL(post("{\"text\":{\"on\":\"yes\"}}", s));
+  TEST_ASSERT_NOT_NULL(post("{\"text\":{\"turn\":45}}", s));
+  TEST_ASSERT_NOT_NULL(post("{\"text\":\"Hi\"}", s));
+  TEST_ASSERT_NOT_NULL(post("{\"text\":{\"message\":\"\",\"on\":true}}", s));
+  TEST_ASSERT_TRUE(s.text == kept.text);
+  TEST_ASSERT_EQUAL(kept.light.brightness, s.light.brightness);
+
+  TEST_ASSERT_NULL(post("{\"text\":{\"turn\":270}}", s));
+  TEST_ASSERT_EQUAL(3, s.text.turn);
+
+  // The longest message, every character escaped, still fits.
+  char body[400] = "{\"text\":{\"color\":\"auto\",\"message\":\"";
+  for (int i = 0; i < 64; i++) strcat(body, i % 2 ? "\\\\" : "\\\"");  // \\ and \" in the JSON, one character each
+  strcat(body, "\"}}");
+  TEST_ASSERT_NULL(post(body, s));
+  TEST_ASSERT_EQUAL(64, strlen(s.text.message));
+  strcpy(strstr(body, "\"}}"), "x\"}}");
+  TEST_ASSERT_EQUAL_STRING("The text is longer than 64 characters.", post(body, s));
+  TEST_ASSERT_TRUE(writeState(s, cl, EFFECTS, EFFECT_COUNT, true, out, sizeof(out)) > 0);
 }
 
 static void test_api_info_and_state_have_the_documented_fields() {
@@ -178,19 +231,19 @@ static void test_api_info_and_state_have_the_documented_fields() {
 
   LightState s;
   CheerLightsState cl;
-  TEST_ASSERT_TRUE(writeState(s, cl, EFFECTS, EFFECT_COUNT, out, sizeof(out)) > 0);
+  TEST_ASSERT_TRUE(writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, sizeof(out)) > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"mode\":\"cheerlights\""));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"cheerlights\":null"));  // before the first color
   cl = {true, {0xff, 0xa5, 0x00}, true};
-  writeState(s, cl, EFFECTS, EFFECT_COUNT, out, sizeof(out));
+  writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, sizeof(out));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"cheerlights\":{\"name\":\"orange\",\"hex\":\"#ffa500\",\"live\":true}"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"fun\":{\"hex\":\"#ff00ff\"}"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"brightness\":255,\"effect\":0,\"speed\":128"));
   TEST_ASSERT_NOT_NULL(strstr(out, "{\"id\":4,\"name\":\"Rainbow\",\"showsColor\":false}"));
   cl.rgb = {0x12, 0x34, 0x56};
-  writeState(s, cl, EFFECTS, EFFECT_COUNT, out, sizeof(out));
+  writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, sizeof(out));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"name\":null,\"hex\":\"#123456\""));
-  TEST_ASSERT_EQUAL(0, writeState(s, cl, EFFECTS, EFFECT_COUNT, out, 40));  // too small: nothing, not half
+  TEST_ASSERT_EQUAL(0, writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, 40));  // too small: nothing, not half
 }
 
 static void test_api_changes_apply_all_or_nothing_and_keep_cheerlights_mode_honest() {
@@ -228,8 +281,8 @@ static void test_api_changes_apply_all_or_nothing_and_keep_cheerlights_mode_hone
   // A screen has its own effects.
   size_t n = SCREEN_EFFECT_COUNT;
   LightState screen;
-  TEST_ASSERT_NULL(applyState("{\"effect\":5}", 12, SCREEN_EFFECTS, n, screen));
-  TEST_ASSERT_NOT_NULL(applyState("{\"effect\":1}", 12, SCREEN_EFFECTS, n, screen));
+  TEST_ASSERT_NULL(applyState("{\"effect\":5}", 12, SCREEN_EFFECTS, n, false, screen));
+  TEST_ASSERT_NOT_NULL(applyState("{\"effect\":1}", 12, SCREEN_EFFECTS, n, false, screen));
 }
 
 static void test_the_light_shows_the_mode_color_and_keeps_its_choice() {
@@ -276,6 +329,7 @@ int main() {
   RUN_TEST(test_scan_lists_each_network_once_strongest_first);
   RUN_TEST(test_saved_networks_rotate_and_the_strongest_in_range_goes_first);
   RUN_TEST(test_api_info_and_state_have_the_documented_fields);
+  RUN_TEST(test_api_text_is_reported_and_changed_only_where_it_scrolls);
   RUN_TEST(test_api_changes_apply_all_or_nothing_and_keep_cheerlights_mode_honest);
   RUN_TEST(test_the_light_shows_the_mode_color_and_keeps_its_choice);
   return UNITY_END();

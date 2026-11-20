@@ -144,10 +144,24 @@ const char* problem(const char* chip, const Settings& s) {
 
 bool chipHasWifi(const char* chip) { return strcmp(chip, "esp32h2") != 0; }
 
-const EffectInfo* effectsFor(Output output, size_t& count) {
+bool motionPins(const Settings& s, const char* chip, int& sda, int& scl) {
+  const Preset* matrix = findPreset("s3-matrix");
+  if (matrix == nullptr || strcmp(chip, matrix->chip) != 0 || strcmp(boardName(s, chip), matrix->board) != 0) {
+    return false;
+  }
+  sda = 11;
+  scl = 12;
+  return true;
+}
+
+const EffectInfo* effectsFor(Output output, bool motion, size_t& count) {
   if (output == Output::Screen) {
     count = SCREEN_EFFECT_COUNT;
     return SCREEN_EFFECTS;
+  }
+  if (motion && output == Output::Pixels) {
+    count = MOTION_EFFECT_COUNT;
+    return MOTION_EFFECTS;
   }
   count = EFFECT_COUNT;
   return EFFECTS;
@@ -203,31 +217,83 @@ int alivePixel(const Settings& s) {
   return 0;
 }
 
-Rgb8 scenePixel(const Settings& s, const Scene& scene, int index) {
-  if (scene.off) return {0, 0, 0};
-  if (!scene.haveColor) return index == alivePixel(s) ? Rgb8{40, 40, 40} : Rgb8{0, 0, 0};
+bool canScroll(const Settings& s) {
+  const Layout l = layoutOf(s);
+  return s.output == Output::Pixels && l.width >= TEXT_ROWS && l.height >= TEXT_ROWS;
+}
+
+namespace {
+
+// A stale color as the LEDs show it: the LED value, dimmed as renderFrame dims it, with the markers off.
+Shown staleShown(const Frame& frame, const Rgb8& base) {
+  Frame led = frame;
+  led.r = base.r;
+  led.g = base.g;
+  led.b = base.b;
+  return renderFrame(led);
+}
+
+Rgb8 staleColor(const Frame& frame, const Rgb8& base) {
+  const Shown shown = staleShown(frame, base);
+  return {shown.r, shown.g, shown.b};
+}
+
+bool ownColors(const Scene& scene) {
+  return (effectFlags(EFFECTS, EFFECT_COUNT, scene.light.effect) & EFFECT_SHOWS_COLOR) == 0;
+}
+
+Rgb8 colorPixel(const Settings& s, const Scene& scene, int index, int x, int y, const Layout& l) {
   const Rgb8 base = ledBase(scene.frame);
   if (scene.frame.stale) {
-    Frame led = scene.frame;
-    led.r = base.r;
-    led.g = base.g;
-    led.b = base.b;
-    const Shown shown = renderFrame(led);
+    const Shown shown = staleShown(scene.frame, base);
     if (shown.markersOff && isMarker(s, index)) return {0, 0, 0};
     return {shown.r, shown.g, shown.b};
   }
+  if (scene.light.effect == EFFECT_FLOW && scene.flow != nullptr) {
+    const float cover = scene.flow->level(x, y);
+    return {static_cast<uint8_t>(base.r * cover + 0.5f), static_cast<uint8_t>(base.g * cover + 0.5f),
+            static_cast<uint8_t>(base.b * cover + 0.5f)};
+  }
+  const Rgb8 p = effectPixel(scene.light.effect, base, scene.light.speed, scene.ms, x, y, l.width, l.height);
+  // An effect that draws its own colors, such as the rainbow, gets them through gamma like any other color.
+  if (ownColors(scene)) return ledColor(p);
+  return p;
+}
+
+}  // namespace
+
+Rgb8 scenePixel(const Settings& s, const Scene& scene, int index) {
+  if (scene.off) return {0, 0, 0};
+  if (!scene.haveColor) return index == alivePixel(s) ? Rgb8{40, 40, 40} : Rgb8{0, 0, 0};
   const Layout l = layoutOf(s);
   int x, y;
   pixelXY(s, index, x, y);
-  const Rgb8 p = effectPixel(scene.light.effect, base, scene.light.speed, scene.ms, x, y, l.width, l.height);
-  // An effect that draws its own colors, such as the rainbow, gets them through gamma like any other color.
-  if ((effectFlags(EFFECTS, EFFECT_COUNT, scene.light.effect) & EFFECT_SHOWS_COLOR) == 0) return ledColor(p);
-  return p;
+  const bool flowing = scene.light.effect == EFFECT_FLOW && scene.flow != nullptr && !scene.frame.stale;
+  if (textShowing(s, scene)) {
+    const TextShow& t = *scene.text;
+    if (textLit(t.strip, t.text.speed, scene.ms - t.since, x, y, l.width, l.height, t.text.turn)) {
+      // Over Flow, an Auto letter on a dry pixel is lit in the color, so the words read on the empty part too.
+      if (flowing && t.text.autoColor && scene.flow->level(x, y) < 0.5f) return ledBase(scene.frame);
+      // Auto reads the letters' color off the color itself, not off each pixel of an animation, so the letters keep
+      // one color as a breath or a sparkle moves under them.
+      const Rgb8 base = ledBase(scene.frame);
+      const bool stale = scene.frame.stale;
+      return textInk(t.text, stale ? staleColor(scene.frame, base) : base, !stale && ownColors(scene));
+    }
+  }
+  return colorPixel(s, scene, index, x, y, l);
 }
 
 bool sceneMoves(const Scene& scene) {
   return scene.haveColor && !scene.off && !scene.frame.stale && effectMoves(scene.light.effect);
 }
+
+bool textShowing(const Settings& s, const Scene& scene) {
+  return scene.text != nullptr && scene.text->text.on && scene.text->text.message[0] != '\0' && scene.haveColor &&
+         !scene.off && canScroll(s);
+}
+
+bool sceneMoves(const Settings& s, const Scene& scene) { return sceneMoves(scene) || textShowing(s, scene); }
 
 uint8_t capBrightness(uint8_t level, uint8_t cap) {
   if (cap == 0) cap = 1;
@@ -433,11 +499,18 @@ const char HELP[] =
     "  wifi list                the saved networks; it joins the strongest one in range\n"
     "  wifi scan                the networks in range that it can join, strongest first\n"
     "  wifi forget \"<name>\"     forget a network, or all of them with wifi forget all\n"
+    "Scrolling text (kept at once; on a grid of LEDs 8 by 8 or more):\n"
+    "  text \"<words>\"           scroll your own words over the color, up to 64 characters\n"
+    "  text <on|off|clear>      show, hide, or forget the words\n"
+    "  text color <auto|white|dark|rrggbb>  auto picks white or dark letters for the color\n"
+    "  text speed <1-255>       slow to fast\n"
+    "  text turn <0|90|180|270> turn the letters clockwise until they read upright\n"
     "Finding your LEDs (nothing is saved):\n"
     "  pins                     the pins that can drive LEDs on this chip\n"
     "  test <pin> <count> <rrggbb>  light that color on the first count LEDs of a pin\n"
     "  test <pin> <count> <rrggbb> <rrggbb>  the second color on the second half, to compare\n"
     "  test off                 stop the test\n"
+    "  motion                   the motion sensor's reading in g, on a board that has one\n"
     "  about                    chip, firmware, name, and whether it is set up";
 
 constexpr char SAVE_HINT[] = " Type save to keep it.";
