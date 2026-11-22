@@ -157,7 +157,7 @@ Typing each of those commands, then `save`, sets up another board of the same ki
 
 Text scrolls only on a grid of LEDs 8 by 8 or more, such as the S3-Matrix.
 On any other light, a `text` command answers that the light cannot show text.
-On a Wi-Fi light, the app and the light's page set text too ([wifi.md](wifi.md)).
+On a Wi-Fi light, the app and the light's page set text too ([wifi.md](wifi.md)), and on a Bluetooth light the app does, from firmware 0.7.0 ([ble-profile.md](ble-profile.md#text)).
 
 The limit is 512 addressable LEDs.
 The console refuses pins the chip uses for flash, PSRAM, its USB port, or the serial console, and pins that are input-only.

@@ -11,7 +11,7 @@
 
 namespace cheerlights {
 
-constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 6, FW_PATCH = 0;
+constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 7, FW_PATCH = 0;
 extern const char FW_TEXT[];
 
 // The setup page, short enough to read off a screen.
@@ -49,6 +49,7 @@ bool readGravity(float& x, float& y, float& z);
 void startBle();
 void serviceBle();
 void bleLightChanged(const Light& light);  // the button changed the animation, so a phone reads it
+void bleTextChanged(const ScrollText& text);  // the console or the network changed the text, so a phone reads it
 
 // Wi-Fi (docs/wifi.md). Each is a no-op on a chip without Wi-Fi.
 void startWifi();

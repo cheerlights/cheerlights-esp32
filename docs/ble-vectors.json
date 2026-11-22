@@ -101,6 +101,19 @@
       "identify": true,
       "board": "Custom",
       "bytes": "010005001706437573746f6d"
+    },
+    {
+      "name": "firmware 0.7.0 on a grid that scrolls text",
+      "protocol": 1,
+      "firmware": "0.7.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "needsSetup": false,
+      "identify": true,
+      "text": true,
+      "board": "Waveshare ESP32-S3-Matrix, 8x8",
+      "bytes": "01000700371e5761766573686172652045535033322d53332d4d61747269782c20387838"
     }
   ],
   "infoNewer": [
@@ -242,6 +255,154 @@
     {
       "name": "unknown version",
       "bytes": "02"
+    }
+  ],
+  "text": [
+    {
+      "name": "Hello, on, auto letters, middle speed, upright",
+      "message": "Hello",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "refusal": 0,
+      "bytes": "010380ffffff000548656c6c6f"
+    },
+    {
+      "name": "off, dark letters, slow, turned 90 degrees, after a write that was too long",
+      "message": "Go team",
+      "on": false,
+      "auto": false,
+      "rgb": "000000",
+      "speed": 24,
+      "turn": 90,
+      "refusal": 2,
+      "bytes": "0104180000000207476f207465616d"
+    },
+    {
+      "name": "no words",
+      "message": "",
+      "on": false,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "refusal": 0,
+      "bytes": "010280ffffff0000"
+    }
+  ],
+  "textNewer": [
+    {
+      "name": "Hello from a newer light, two bytes longer",
+      "message": "Hello",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "refusal": 0,
+      "bytes": "010380ffffff000548656c6c6fabcd"
+    }
+  ],
+  "textWrite": [
+    {
+      "name": "an accent and a curly quote, as a phone keyboard types them",
+      "typed": "Café ’24",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "bytes": "010380ffffff000b436166c3a920e280993234",
+      "kept": "Cafe '24",
+      "keptOn": true,
+      "keptSpeed": 128,
+      "refusal": 0
+    },
+    {
+      "name": "white letters turned 270 degrees, fastest",
+      "typed": "GO",
+      "on": true,
+      "auto": false,
+      "rgb": "ffffff",
+      "speed": 255,
+      "turn": 270,
+      "bytes": "010dffffffff0002474f",
+      "kept": "GO",
+      "keptOn": true,
+      "keptSpeed": 255,
+      "refusal": 0
+    },
+    {
+      "name": "no words turn the text off",
+      "typed": "",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "bytes": "010380ffffff0000",
+      "kept": "",
+      "keptOn": false,
+      "keptSpeed": 128,
+      "refusal": 0
+    },
+    {
+      "name": "zero speed reads as 1",
+      "typed": "Hi",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 0,
+      "turn": 0,
+      "bytes": "010300ffffff00024869",
+      "kept": "Hi",
+      "keptOn": true,
+      "keptSpeed": 1,
+      "refusal": 0
+    },
+    {
+      "name": "a character the font does not have",
+      "typed": "Hi 🎄",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "bytes": "010380ffffff0007486920f09f8e84",
+      "kept": null,
+      "keptOn": null,
+      "keptSpeed": null,
+      "refusal": 1
+    },
+    {
+      "name": "65 characters",
+      "typed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "on": true,
+      "auto": true,
+      "rgb": "ffffff",
+      "speed": 128,
+      "turn": 0,
+      "bytes": "010380ffffff00416161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "kept": null,
+      "keptOn": null,
+      "keptSpeed": null,
+      "refusal": 2
+    }
+  ],
+  "textRejected": [
+    {
+      "name": "too short",
+      "bytes": "010380ffffff00"
+    },
+    {
+      "name": "unknown version",
+      "bytes": "020380ffffff0000"
+    },
+    {
+      "name": "message cut short",
+      "bytes": "010380ffffff00054865"
     }
   ]
 }

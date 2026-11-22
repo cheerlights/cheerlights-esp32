@@ -73,7 +73,7 @@ lines += ["};", ""]
 lines += [
     "struct InfoVector {",
     "  const char* name; uint8_t bytes[64]; unsigned length; uint8_t major, minor, patch;",
-    "  bool display, offControl, light, needsSetup, identify; const char* board;",
+    "  bool display, offControl, light, needsSetup, identify; const char* board; bool text;",
     "};",
     "static const InfoVector INFO_VECTORS[] = {",
 ]
@@ -85,7 +85,7 @@ for v in spec["info"]:
     board = '"' + v["board"] + '"' if "board" in v else "nullptr"
     lines.append(
         f'  {{"{v["name"]}", {{{arr(raw)}}}, {len(raw)}, {major}, {minor}, {patch}, '
-        f'{", ".join(str(f).lower() for f in flags)}, {board}}},'
+        f'{", ".join(str(f).lower() for f in flags)}, {board}, {str(v.get("text", False)).lower()}}},'
     )
 lines += ["};"]
 lines += ["struct IdentifyVector { const char* name; uint8_t bytes[4]; unsigned length; bool ok; };",
@@ -94,6 +94,48 @@ for v, ok in [(v, True) for v in spec["identify"]] + [(v, False) for v in spec["
     raw = bytes.fromhex(v["bytes"])
     lines.append(f'  {{"{v["name"]}", {{{arr(raw + bytes(4 - len(raw)))}}}, {len(raw)}, {str(ok).lower()}}},')
 lines += ["};"]
+# Text: what a light returns on a read, and what a phone writes with what the light keeps of it.
+lines += [
+    "struct TextValueVector {",
+    "  const char* name; uint8_t bytes[96]; unsigned length; const char* message; bool on, autoColor;",
+    "  uint8_t r, g, b, speed, turn, refusal;",
+    "};",
+    "static const TextValueVector TEXT_VALUES[] = {",
+]
+for v in spec["text"]:
+    raw = bytes.fromhex(v["bytes"])
+    rgb = bytes.fromhex(v["rgb"])
+    lines.append(
+        f'  {{"{v["name"]}", {{{arr(raw)}}}, {len(raw)}, "{v["message"]}", {str(v["on"]).lower()}, '
+        f'{str(v["auto"]).lower()}, {rgb[0]}, {rgb[1]}, {rgb[2]}, {v["speed"]}, {v["turn"] // 90}, {v["refusal"]}}},'
+    )
+lines += [
+    "};",
+    "struct TextWriteVector {",
+    "  const char* name; uint8_t bytes[96]; unsigned length; const char* kept; bool on, autoColor;",
+    "  uint8_t r, g, b, speed, turn, refusal;",
+    "};",
+    "static const TextWriteVector TEXT_WRITES[] = {",
+]
+for v in spec["textWrite"]:
+    raw = bytes.fromhex(v["bytes"])
+    assert len(raw) <= 96, v["name"]
+    rgb = bytes.fromhex(v["rgb"])
+    kept = '"' + v["kept"] + '"' if v["kept"] is not None else "nullptr"
+    on = str(bool(v["keptOn"])).lower()
+    speed = v["keptSpeed"] if v["keptSpeed"] is not None else 0
+    lines.append(
+        f'  {{"{v["name"]}", {{{arr(raw)}}}, {len(raw)}, {kept}, {on}, {str(v["auto"]).lower()}, '
+        f'{rgb[0]}, {rgb[1]}, {rgb[2]}, {speed}, {v["turn"] // 90}, {v["refusal"]}}},'
+    )
+lines += ["};", "struct TextRejectedVector { const char* name; uint8_t bytes[16]; unsigned length; };",
+          "static const TextRejectedVector TEXT_REJECTED[] = {"]
+for v in spec["textRejected"]:
+    raw = bytes.fromhex(v["bytes"])
+    lines.append(f'  {{"{v["name"]}", {{{arr(raw + bytes(16 - len(raw)))}}}, {len(raw)}}},')
+newer = spec["textNewer"][0]
+lines += ["};", f'static const uint8_t TEXT_NEWER[] = {{{arr(bytes.fromhex(newer["bytes"]))}}};',
+          f'static const unsigned TEXT_NEWER_LENGTH = {len(bytes.fromhex(newer["bytes"]))};', ""]
 effects = bytes.fromhex(spec["effects"][0]["bytes"])
 lines += [
     f"static const uint8_t EFFECTS_VECTOR[] = {{{arr(effects)}}};",

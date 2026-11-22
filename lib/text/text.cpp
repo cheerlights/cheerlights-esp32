@@ -195,6 +195,12 @@ bool operator==(const ScrollText& a, const ScrollText& b) {
          a.speed == b.speed && a.turn == b.turn;
 }
 
+namespace {
+const char* const UNKNOWN_CHARACTER =
+    "The text has a character this light cannot show. It shows letters, numbers, spaces, and keyboard punctuation.";
+const char* const TOO_LONG = "The text is longer than 64 characters.";
+}  // namespace
+
 const char* normalizeText(const char* utf8, char out[TEXT_MAX + 1]) {
   char work[TEXT_MAX + 1];
   size_t n = 0;
@@ -202,11 +208,10 @@ const char* normalizeText(const char* utf8, char out[TEXT_MAX + 1]) {
   while (*p) {
     const char* plain = plainForm(nextCodePoint(p));
     if (plain == nullptr) {
-      return "The text has a character this light cannot show. It shows letters, numbers, spaces, and keyboard "
-             "punctuation.";
+      return UNKNOWN_CHARACTER;
     }
     for (const char* q = plain; *q; q++) {
-      if (n == TEXT_MAX) return "The text is longer than 64 characters.";
+      if (n == TEXT_MAX) return TOO_LONG;
       work[n++] = *q;
     }
   }
@@ -325,6 +330,47 @@ bool decodeText(const uint8_t* data, size_t length, ScrollText& out) {
   t.color = {data[3], data[4], data[5]};
   out = t;
   return true;
+}
+
+ParseResult parseTextValue(const uint8_t* data, size_t length, const ScrollText& current, ScrollText& out,
+                           TextRefusal& refusal) {
+  refusal = TextRefusal::None;
+  if (data == nullptr || length < TEXT_VALUE_HEADER) return ParseResult::WrongLength;
+  if (data[0] != TEXT_VALUE_VERSION) return ParseResult::UnknownVersion;
+  const size_t bytes = data[7];
+  if (length < TEXT_VALUE_HEADER + bytes) return ParseResult::WrongLength;
+  // Bytes after the message are for a later version, and ignored.
+  char typed[256];
+  memcpy(typed, data + TEXT_VALUE_HEADER, bytes);
+  typed[bytes] = '\0';
+  ScrollText next;
+  const char* why = normalizeText(typed, next.message);
+  if (why != nullptr) {
+    refusal = why == TOO_LONG ? TextRefusal::Length : TextRefusal::Character;
+    out = current;
+    return ParseResult::Ok;
+  }
+  next.on = (data[1] & 1) != 0 && next.message[0] != '\0';
+  next.autoColor = (data[1] & 2) != 0;
+  next.turn = (data[1] >> 2) & 3;
+  next.speed = data[2] == 0 ? 1 : data[2];
+  next.color = {data[3], data[4], data[5]};
+  out = next;
+  return ParseResult::Ok;
+}
+
+size_t encodeTextValue(const ScrollText& text, TextRefusal refusal, uint8_t out[TEXT_VALUE_SIZE]) {
+  const size_t length = strnlen(text.message, TEXT_MAX);
+  out[0] = TEXT_VALUE_VERSION;
+  out[1] = static_cast<uint8_t>((text.on ? 1 : 0) | (text.autoColor ? 2 : 0) | ((text.turn & 3) << 2));
+  out[2] = text.speed;
+  out[3] = text.color.r;
+  out[4] = text.color.g;
+  out[5] = text.color.b;
+  out[6] = static_cast<uint8_t>(refusal);
+  out[7] = static_cast<uint8_t>(length);
+  memcpy(out + TEXT_VALUE_HEADER, text.message, length);
+  return TEXT_VALUE_HEADER + length;
 }
 
 namespace {

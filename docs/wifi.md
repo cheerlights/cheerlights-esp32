@@ -115,7 +115,7 @@ It answers `200` with the full state, or `400` with `{ "error": "..." }` and no 
 - New words, turning text on, or a new text speed restarts the scroll at the right edge, so the message reads from its first letter.
 - A light that cannot show text refuses a `text` field, with no change.
   `"on": true` is refused when there are no words.
-- A Bluetooth light takes text over USB only ([configure.md](configure.md)).
+- A Bluetooth light takes text from the app too, from firmware 0.7.0 ([ble-profile.md](ble-profile.md#text)).
 
 ### `POST /api/v1/identify`
 

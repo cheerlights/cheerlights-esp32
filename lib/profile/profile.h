@@ -47,12 +47,14 @@ constexpr uint8_t CAP_OFF_CONTROL = 0x02;  // it has a physical off control
 constexpr uint8_t CAP_LIGHT = 0x04;        // it has Light and Effects
 constexpr uint8_t CAP_NEEDS_SETUP = 0x08;  // it is not set up, so it shows nothing until it is set up over USB
 constexpr uint8_t CAP_IDENTIFY = 0x10;     // it has Identify, so a phone can make it blink
+constexpr uint8_t CAP_TEXT = 0x20;         // it has Text, so a phone can set the words it scrolls (firmware 0.7.0)
 
 struct Info {
   uint8_t major, minor, patch;
   bool display, offControl, light, needsSetup;
   bool identify = false;
   const char* board = nullptr;  // null before firmware 0.5.0, which sent five bytes
+  bool text = false;            // from firmware 0.7.0, on a grid that can scroll text
 };
 // Returns the length written: five bytes, then the board's name when there is one, cut to INFO_BOARD_MAX bytes at
 // a whole character.

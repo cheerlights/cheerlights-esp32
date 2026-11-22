@@ -4,6 +4,8 @@
 #include <text.h>
 #include <unity.h>
 
+#include "../test_profile/vectors.h"
+
 using namespace cheerlights;
 
 void setUp() {}
@@ -391,6 +393,72 @@ static void test_flow_shows_the_liquid_in_the_color_and_text_reads_over_it() {
   TEST_ASSERT_TRUE(darkOnLiquid);
 }
 
+// The Text characteristic (docs/ble-profile.md), against the published vectors.
+static void test_text_values_encode_as_published() {
+  for (const TextValueVector& v : TEXT_VALUES) {
+    ScrollText text;
+    snprintf(text.message, sizeof(text.message), "%s", v.message);
+    text.on = v.on;
+    text.autoColor = v.autoColor;
+    text.color = {v.r, v.g, v.b};
+    text.speed = v.speed;
+    text.turn = v.turn;
+    uint8_t out[TEXT_VALUE_SIZE];
+    TEST_ASSERT_EQUAL_MESSAGE(v.length, encodeTextValue(text, static_cast<TextRefusal>(v.refusal), out), v.name);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, out, v.length, v.name);
+  }
+}
+
+static void test_a_phone_write_is_kept_in_the_font_or_refused_with_a_reason() {
+  ScrollText current;
+  snprintf(current.message, sizeof(current.message), "Before");
+  current.on = true;
+  current.speed = 40;
+  for (const TextWriteVector& v : TEXT_WRITES) {
+    ScrollText out;
+    TextRefusal refusal = TextRefusal::None;
+    TEST_ASSERT_TRUE_MESSAGE(parseTextValue(v.bytes, v.length, current, out, refusal) == ParseResult::Ok, v.name);
+    TEST_ASSERT_EQUAL_MESSAGE(v.refusal, static_cast<uint8_t>(refusal), v.name);
+    if (v.kept == nullptr) {
+      // Turned down: the light keeps what it had.
+      TEST_ASSERT_TRUE_MESSAGE(out == current, v.name);
+      continue;
+    }
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(v.kept, out.message, v.name);
+    TEST_ASSERT_EQUAL_MESSAGE(v.on, out.on, v.name);
+    TEST_ASSERT_EQUAL_MESSAGE(v.autoColor, out.autoColor, v.name);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.speed, out.speed, v.name);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.turn, out.turn, v.name);
+    TEST_ASSERT_TRUE_MESSAGE((out.color == Rgb8{v.r, v.g, v.b}), v.name);
+  }
+}
+
+static void test_bad_text_values_are_ignored_and_longer_ones_read() {
+  ScrollText current, out;
+  TextRefusal refusal;
+  for (const TextRejectedVector& v : TEXT_REJECTED) {
+    TEST_ASSERT_TRUE_MESSAGE(parseTextValue(v.bytes, v.length, current, out, refusal) != ParseResult::Ok, v.name);
+  }
+  TEST_ASSERT_TRUE(parseTextValue(nullptr, 8, current, out, refusal) != ParseResult::Ok);
+  // A value from a later phone carries more after the message; this light reads the fields it knows.
+  TEST_ASSERT_TRUE(parseTextValue(TEXT_NEWER, TEXT_NEWER_LENGTH, current, out, refusal) == ParseResult::Ok);
+  TEST_ASSERT_EQUAL_STRING("Hello", out.message);
+  TEST_ASSERT_TRUE(out.on);
+}
+
+// What a light keeps, encoded and written back, is kept the same: a phone that resends a read changes nothing.
+static void test_a_read_written_back_changes_nothing() {
+  for (const TextValueVector& v : TEXT_VALUES) {
+    ScrollText current, out;
+    TextRefusal refusal;
+    TEST_ASSERT_TRUE_MESSAGE(parseTextValue(v.bytes, v.length, current, out, refusal) == ParseResult::Ok, v.name);
+    uint8_t again[TEXT_VALUE_SIZE];
+    const size_t n = encodeTextValue(out, static_cast<TextRefusal>(v.refusal), again);
+    TEST_ASSERT_EQUAL_MESSAGE(v.length, n, v.name);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, again, n, v.name);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_phone_keyboard_characters_become_ones_the_font_has);
@@ -404,5 +472,9 @@ int main() {
   RUN_TEST(test_text_scrolls_over_the_color_only_on_a_grid_that_can_show_it);
   RUN_TEST(test_a_stale_color_keeps_its_text_and_picks_letters_for_the_dimmed_color);
   RUN_TEST(test_flow_shows_the_liquid_in_the_color_and_text_reads_over_it);
+  RUN_TEST(test_text_values_encode_as_published);
+  RUN_TEST(test_a_phone_write_is_kept_in_the_font_or_refused_with_a_reason);
+  RUN_TEST(test_bad_text_values_are_ignored_and_longer_ones_read);
+  RUN_TEST(test_a_read_written_back_changes_nothing);
   return UNITY_END();
 }

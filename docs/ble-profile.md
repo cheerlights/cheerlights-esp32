@@ -31,6 +31,7 @@ This firmware names itself `CL-` and four hex digits from its address, such as `
 | `Light` | `0a8345b7-afa9-47df-9d63-e98130514e19` | Read, write, write without response | Brightness, effect, and speed, below |
 | `Effects` | `c4fa31c4-e81e-49d2-be0c-530c01865776` | Read | The animations the light has, below |
 | `Identify` | `ee2d928a-492c-4ef4-a9be-b3dadd663819` | Write, write without response | One byte, below, to make the light blink |
+| `Text` | `ed858a13-e5b3-48eb-993a-2440da02a36c` | Read, write | The owner's scrolling words, below, on a light that can show them |
 
 `Info` is byte 0 protocol version, bytes 1 to 3 firmware major, minor, and patch, and byte 4 capability flags.
 Flag bit 0 means the light has a display, bit 1 means it has a physical off control, and bit 2 means it has `Light` and `Effects`.
@@ -39,6 +40,8 @@ Bit 3 means the light is not set up: it does not know where its LEDs are, so it 
 A phone that sees bit 3 tells its owner to set the light up over USB, on the [install page](https://cheerlights.github.io/cheerlights-esp32/).
 Firmware before 0.4.0 never sets bit 3.
 Bit 4 means the light has `Identify`.
+Bit 5 means the light has `Text`: it is a grid of LEDs at least 8 by 8, which can scroll words.
+Firmware before 0.7.0 never sets bit 5.
 
 From firmware 0.5.0, byte 5 is the length of the board's name, up to 40, and the name follows in UTF-8, such as `LilyGO T-Display, 1.14 inch screen`, or `Custom` for wiring set by hand.
 A phone shows it as what the light is.
@@ -112,6 +115,33 @@ It lets an owner with several lights tell which one they are working with.
 A light ignores an empty value or an unknown version.
 A phone offers Blink only on a light with `Info` bit 4.
 
+## Text
+
+`Text` holds the owner's own words, which scroll over the color or the animation.
+A light has it only when it can show words, and says so with `Info` bit 5.
+Firmware 0.7.0 is the first to have it; the same words can be set over USB with the `text` command.
+
+| Byte | Field | Meaning |
+|---|---|---|
+| 0 | Version | 1 |
+| 1 | Flags | Bit 0 on, bit 1 automatic letter color, bits 2 and 3 the turn in quarter turns clockwise |
+| 2 | Speed | 1 to 255, slow to fast; 0 is treated as 1 |
+| 3 to 5 | R, G, B | The letters' color when bit 1 is clear; `000000` is dark, the LEDs off where the letters are |
+| 6 | Refusal | In a read, why the light turned down the last write: 0 it did not, 1 a character it cannot show, 2 longer than 64 characters. A phone writes 0. |
+| 7 | Length | The message's length in bytes |
+| 8 on | Message | UTF-8 |
+
+A phone writes the words as the owner typed them.
+The light keeps them the way its font has them: printable ASCII as it is, curly quotes, dashes, the ellipsis, and the no-break space as their plain forms, and accented Latin letters without their accents.
+If the words have a character the font does not have, or come to more than 64 characters, the light keeps what it had, and a read returns its own words with the reason in byte 6.
+A write with no words turns the text off.
+A read returns the words as the light keeps them, so the phone shows what the light shows.
+With automatic color, the letters are white on a dark color and dark on a light one, and dark over an animation that draws its own colors.
+The turn lets a grid mounted any way round read upright.
+
+A write can exceed one ATT payload, so the phone writes it with a long write.
+A receiver ignores a value shorter than eight bytes, with an unknown version, or with fewer message bytes than byte 7 says, and it ignores bytes after the message.
+
 ## Compatibility
 
 A phone's app updates from the app store, and a light's firmware updates only when someone flashes it, so a phone often meets a light that is older or newer than it.
@@ -131,9 +161,10 @@ The vectors named `...Newer` in [ble-vectors.json](ble-vectors.json) are values 
 ## Security
 
 Writes are unauthenticated, so anyone nearby can repaint a light.
-That is acceptable only because every characteristic controls light and nothing else: color, brightness, the light's own animations, and a blink.
-Never add a command beyond light over Bluetooth, such as network settings, firmware updates, or anything that stores data from the phone other than the `Light` value.
+That is acceptable only because every characteristic controls light and nothing else: color, brightness, the light's own animations, a blink, and the words a grid scrolls.
+Never add a command beyond light over Bluetooth, such as network settings or firmware updates, and keep what the light stores from a phone to the `Light` and `Text` values.
 For that reason, this firmware takes its wiring settings over USB only.
+Anyone in range can also set a grid's words, as they can its color, so a light within Bluetooth range of strangers can show words its owner did not choose.
 
 ## Optional parts
 

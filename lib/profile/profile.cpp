@@ -61,7 +61,8 @@ size_t encodeInfo(const Info& info, uint8_t out[INFO_MAX_SIZE]) {
   out[2] = info.minor;
   out[3] = info.patch;
   out[4] = (info.display ? CAP_DISPLAY : 0) | (info.offControl ? CAP_OFF_CONTROL : 0) | (info.light ? CAP_LIGHT : 0) |
-           (info.needsSetup ? CAP_NEEDS_SETUP : 0) | (info.identify ? CAP_IDENTIFY : 0);
+           (info.needsSetup ? CAP_NEEDS_SETUP : 0) | (info.identify ? CAP_IDENTIFY : 0) |
+           (info.text ? CAP_TEXT : 0);
   if (info.board == nullptr) return INFO_SIZE;
   size_t n = strlen(info.board);
   if (n > INFO_BOARD_MAX) {

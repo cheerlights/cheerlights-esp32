@@ -66,6 +66,24 @@ constexpr size_t TEXT_STORED_SIZE = 7 + TEXT_MAX;
 void encodeText(const ScrollText& text, uint8_t out[TEXT_STORED_SIZE]);
 bool decodeText(const uint8_t* data, size_t length, ScrollText& out);
 
+// The Text characteristic (docs/ble-profile.md): a version, flags, speed, the letters' color, a refusal, the
+// message's length in bytes, and the message. A phone writes the words as typed, in UTF-8; the light keeps them the
+// way its font has them, and a read returns what it keeps, with the reason it turned down the last write, if it did.
+constexpr uint8_t TEXT_VALUE_VERSION = 1;
+constexpr size_t TEXT_VALUE_HEADER = 8;                          // the fields before the message
+constexpr size_t TEXT_VALUE_SIZE = TEXT_VALUE_HEADER + TEXT_MAX;  // the longest value a light sends
+enum class TextRefusal : uint8_t {
+  None = 0,
+  Character = 1,  // a character the font does not have, even without its accent
+  Length = 2,     // longer than TEXT_MAX characters once in the font's characters
+};
+// Reads a phone's write. Ok gives the new text in out; a refusal leaves out as current and says why in refusal.
+// An empty message turns the text off. WrongLength and UnknownVersion are ignored, like any other value.
+ParseResult parseTextValue(const uint8_t* data, size_t length, const ScrollText& current, ScrollText& out,
+                           TextRefusal& refusal);
+// The value a read returns. Returns its length.
+size_t encodeTextValue(const ScrollText& text, TextRefusal refusal, uint8_t out[TEXT_VALUE_SIZE]);
+
 // The text command on the USB console. NotText: the line is some other command. None: nothing changed (a look, or
 // a mistake). Changed: the caller keeps and shows the new text. scrolls is false on a light that cannot show text,
 // which then says so instead of changing anything.

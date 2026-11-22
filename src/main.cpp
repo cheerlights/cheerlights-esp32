@@ -19,8 +19,8 @@
 
 namespace cheerlights {
 
-const char FW_TEXT[] = "0.6.0";
-static_assert(FW_MAJOR == 0 && FW_MINOR == 6 && FW_PATCH == 0, "FW_TEXT matches the version");
+const char FW_TEXT[] = "0.7.0";
+static_assert(FW_MAJOR == 0 && FW_MINOR == 7 && FW_PATCH == 0, "FW_TEXT matches the version");
 
 Settings settings;
 Scene scene{};
@@ -410,6 +410,7 @@ void textChanged(const ScrollText& text) {
   uint8_t stored[TEXT_STORED_SIZE];
   encodeText(text, stored);
   prefs.putBytes("text", stored, TEXT_STORED_SIZE);
+  bleTextChanged(text);
   char line[140];
   describeText(text, line, sizeof(line));
   logf("%s\n", line);

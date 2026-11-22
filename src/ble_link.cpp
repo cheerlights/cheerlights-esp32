@@ -15,6 +15,7 @@ constexpr const char* INFO_UUID = "3554cfbc-0bcc-47f2-9af2-3b313c97a59d";
 constexpr const char* LIGHT_UUID = "0a8345b7-afa9-47df-9d63-e98130514e19";
 constexpr const char* EFFECTS_UUID = "c4fa31c4-e81e-49d2-be0c-530c01865776";
 constexpr const char* IDENTIFY_UUID = "ee2d928a-492c-4ef4-a9be-b3dadd663819";
+constexpr const char* TEXT_UUID = "ed858a13-e5b3-48eb-993a-2440da02a36c";
 
 // Written from the BLE task and read from the main loop.
 portMUX_TYPE pendingLock = portMUX_INITIALIZER_UNLOCKED;
@@ -23,6 +24,8 @@ volatile bool framePending = false;
 Light pendingLight{};
 volatile bool lightPending = false;
 volatile bool identifyPending = false;
+ScrollText pendingText{};
+volatile bool textPending = false;
 
 // The callbacks run on the Bluetooth task. Each keeps its own copy of the last good value,
 // so a rejected write can restore it without touching what the main loop is drawing.
@@ -89,6 +92,36 @@ class IdentifyCallbacks : public NimBLECharacteristicCallbacks {
   }
 };
 
+// The owner's words. A write the light turns down keeps the words it has, and a read says why, so the phone can.
+class TextCallbacks : public NimBLECharacteristicCallbacks {
+ public:
+  ScrollText kept{};  // guarded by pendingLock: the main loop updates it when the console changes the text
+
+ private:
+  void onWrite(NimBLECharacteristic* c, NimBLEConnInfo&) override {
+    const NimBLEAttValue value = c->getValue();
+    portENTER_CRITICAL(&pendingLock);
+    const ScrollText current = kept;
+    portEXIT_CRITICAL(&pendingLock);
+    ScrollText next{};
+    TextRefusal refusal = TextRefusal::None;
+    const ParseResult result = parseTextValue(value.data(), value.length(), current, next, refusal);
+    uint8_t out[TEXT_VALUE_SIZE];
+    if (result != ParseResult::Ok) {
+      logf("ignored reason=text len=%u\n", static_cast<unsigned>(value.length()));
+      c->setValue(out, encodeTextValue(current, TextRefusal::None, out));
+      return;
+    }
+    if (refusal != TextRefusal::None) logf("text refused reason=%u\n", static_cast<unsigned>(refusal));
+    c->setValue(out, encodeTextValue(next, refusal, out));
+    portENTER_CRITICAL(&pendingLock);
+    kept = next;
+    pendingText = next;
+    textPending = refusal == TextRefusal::None;
+    portEXIT_CRITICAL(&pendingLock);
+  }
+};
+
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& info) override {
     logf("connected peer=%s count=%u\n", info.getAddress().toString().c_str(), server->getConnectedCount());
@@ -103,8 +136,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 ColorCallbacks colorCallbacks;
 LightCallbacks lightCallbacks;
 IdentifyCallbacks identifyCallbacks;
+TextCallbacks textCallbacks;
 ServerCallbacks serverCallbacks;
 NimBLECharacteristic* lightCharacteristic = nullptr;
+NimBLECharacteristic* textCharacteristic = nullptr;
 
 }  // namespace
 
@@ -127,10 +162,11 @@ void startBle() {
   // The T-Display's button steps through the animations, so it is not an off control.
   const bool setUp = isSetUp(settings);
   const bool offControl = settings.buttonPin >= 0 && settings.output != Output::Screen;
+  const bool scrolls = canScroll(settings);
   NimBLECharacteristic* info = service->createCharacteristic(INFO_UUID, NIMBLE_PROPERTY::READ);
   uint8_t infoValue[INFO_MAX_SIZE];
   const size_t infoLength =
-      encodeInfo({FW_MAJOR, FW_MINOR, FW_PATCH, setUp, offControl, true, !setUp, true, boardName(settings, CL_CHIP)},
+      encodeInfo({FW_MAJOR, FW_MINOR, FW_PATCH, setUp, offControl, true, !setUp, true, boardName(settings, CL_CHIP), scrolls},
                  infoValue);
   info->setValue(infoValue, infoLength);
 
@@ -151,6 +187,15 @@ void startBle() {
       service->createCharacteristic(IDENTIFY_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   identifyCharacteristic->setCallbacks(&identifyCallbacks);
 
+  // Only a grid that can show text has Text, and Info bit 5 says so.
+  if (scrolls) {
+    textCharacteristic = service->createCharacteristic(TEXT_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE);
+    textCallbacks.kept = currentText();
+    uint8_t value[TEXT_VALUE_SIZE];
+    textCharacteristic->setValue(value, encodeTextValue(textCallbacks.kept, TextRefusal::None, value));
+    textCharacteristic->setCallbacks(&textCallbacks);
+  }
+
   NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->enableScanResponse(true);
@@ -167,6 +212,15 @@ void bleLightChanged(const Light& light) {
   lightCharacteristic->setValue(lightCallbacks.accepted, LIGHT_SIZE);
 }
 
+void bleTextChanged(const ScrollText& text) {
+  if (textCharacteristic == nullptr) return;
+  portENTER_CRITICAL(&pendingLock);
+  textCallbacks.kept = text;
+  portEXIT_CRITICAL(&pendingLock);
+  uint8_t value[TEXT_VALUE_SIZE];
+  textCharacteristic->setValue(value, encodeTextValue(text, TextRefusal::None, value));
+}
+
 void serviceBle() {
   if (framePending) {
     portENTER_CRITICAL(&pendingLock);
@@ -181,6 +235,13 @@ void serviceBle() {
     lightPending = false;
     portEXIT_CRITICAL(&pendingLock);
     lightChanged(light);
+  }
+  if (textPending) {
+    portENTER_CRITICAL(&pendingLock);
+    const ScrollText text = pendingText;
+    textPending = false;
+    portEXIT_CRITICAL(&pendingLock);
+    textChanged(text);
   }
   if (identifyPending) {
     identifyPending = false;

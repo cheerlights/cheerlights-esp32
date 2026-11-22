@@ -100,7 +100,8 @@ static void test_stale_looks_different_from_fresh() {
 static void test_info_vectors_encode() {
   for (const InfoVector& v : INFO_VECTORS) {
     uint8_t out[INFO_MAX_SIZE];
-    const size_t n = encodeInfo({v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup, v.identify, v.board}, out);
+    const size_t n = encodeInfo(
+        {v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup, v.identify, v.board, v.text}, out);
     TEST_ASSERT_EQUAL_MESSAGE(v.length, n, v.name);
     TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, out, v.length, v.name);
   }
