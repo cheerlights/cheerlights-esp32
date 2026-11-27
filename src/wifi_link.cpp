@@ -249,7 +249,9 @@ void startServing() {
   } else {
     logf("mdns failed\n");
   }
-  server.on("/", HTTP_GET, [] { server.send(200, "text/html; charset=utf-8", WEB_PAGE); });
+  // send_P writes the page straight from flash. send() would copy all 20 KB into a String first, and on the
+  // T-Display, whose screen buffer takes 64 KB, that left too little memory to send it: 200 with no body.
+  server.on("/", HTTP_GET, [] { server.send_P(200, "text/html; charset=utf-8", WEB_PAGE, sizeof(WEB_PAGE) - 1); });
   server.on("/api/v1/info", HTTP_GET, handleInfo);
   server.on("/api/v1/identify", HTTP_POST, [] {
     identify();
