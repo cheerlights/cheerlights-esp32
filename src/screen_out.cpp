@@ -148,11 +148,20 @@ void startScreen() {
 void serviceScreen() {
   if (!started) return;
   const uint32_t now = millis();
-  // The backlight is the brightness; the screen has no off.
-  const uint8_t level = capBrightness(scene.light.brightness, settings.maxBrightness);
+  bool lit = false;
+  const bool blinking = identifying(lit);
+  // The backlight is the brightness, and dark while the light is off. A blink lights it even then, as it does LEDs,
+  // so the owner can find the light.
+  const bool showing = scene.light.on || blinking;
+  const uint8_t level = showing ? capBrightness(scene.light.brightness, settings.maxBrightness) : 0;
   if (level != backlight) {
     backlight = level;
     ledcWrite(PIN_BACKLIGHT, level);
+  }
+  static bool wasShowing = true;
+  if (showing != wasShowing) {
+    wasShowing = showing;
+    dirty = true;  // draw the picture as it is now when the light comes back on
   }
   if (scene.light.effect != effectShown) {
     effectShown = scene.light.effect;
@@ -181,8 +190,7 @@ void serviceScreen() {
   }
   // A blink fills the screen white and black, then the picture comes back.
   static bool wasBlinking = false;
-  bool lit = false;
-  if (identifying(lit)) {
+  if (blinking) {
     static int lastShown = -1;
     if (static_cast<int>(lit) != lastShown) {
       lastShown = lit;
@@ -199,6 +207,7 @@ void serviceScreen() {
     wasBlinking = false;
     dirty = true;
   }
+  if (!showing) return;  // nothing to draw on a dark screen
   static uint32_t lastFrame = 0;
   const bool fading = haveShown && now - colorAt < FADE_MS + FRAME_MS;
   const bool animating = scene.haveColor && infoUntil == 0 && sceneMoves(sceneFor(effectShown));

@@ -101,7 +101,8 @@ static void test_info_vectors_encode() {
   for (const InfoVector& v : INFO_VECTORS) {
     uint8_t out[INFO_MAX_SIZE];
     const size_t n = encodeInfo(
-        {v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup, v.identify, v.board, v.text}, out);
+        {v.major, v.minor, v.patch, v.display, v.offControl, v.light, v.needsSetup, v.identify, v.board, v.text, v.onOff},
+        out);
     TEST_ASSERT_EQUAL_MESSAGE(v.length, n, v.name);
     TEST_ASSERT_EQUAL_HEX8_ARRAY_MESSAGE(v.bytes, out, v.length, v.name);
   }
@@ -129,11 +130,16 @@ static void test_identify_vectors() {
 
 static void test_light_vectors() {
   for (const LightVector& v : LIGHT_VECTORS) {
-    Light l{};
-    TEST_ASSERT_TRUE_MESSAGE(parseLight(v.bytes, v.length, l) == ParseResult::Ok, v.name);
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.brightness, l.brightness, v.name);
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.effect, l.effect, v.name);
-    TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.speed, l.speed, v.name);
+    // Read into a light that is on and one that is off: a value without the flags byte keeps each as it was.
+    for (const bool wasOn : {true, false}) {
+      Light l{};
+      l.on = wasOn;
+      TEST_ASSERT_TRUE_MESSAGE(parseLight(v.bytes, v.length, l) == ParseResult::Ok, v.name);
+      TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.brightness, l.brightness, v.name);
+      TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.effect, l.effect, v.name);
+      TEST_ASSERT_EQUAL_UINT8_MESSAGE(v.speed, l.speed, v.name);
+      TEST_ASSERT_EQUAL_MESSAGE(v.on < 0 ? wasOn : v.on == 1, l.on, v.name);
+    }
   }
   for (const LightVector& v : LIGHT_REJECTED) {
     Light l{};
@@ -146,13 +152,35 @@ static void test_light_round_trips() {
   in.brightness = 77;
   in.effect = EFFECT_RIPPLE;
   in.speed = 200;
-  uint8_t b[LIGHT_SIZE];
+  in.on = false;
+  uint8_t b[LIGHT_MAX_SIZE];
   encodeLight(in, b);
+  TEST_ASSERT_EQUAL_HEX8(0x00, b[4]);
   Light out{};
-  TEST_ASSERT_TRUE(parseLight(b, LIGHT_SIZE, out) == ParseResult::Ok);
+  TEST_ASSERT_TRUE(parseLight(b, LIGHT_MAX_SIZE, out) == ParseResult::Ok);
   TEST_ASSERT_EQUAL_UINT8(77, out.brightness);
   TEST_ASSERT_EQUAL_UINT8(EFFECT_RIPPLE, out.effect);
   TEST_ASSERT_EQUAL_UINT8(200, out.speed);
+  TEST_ASSERT_FALSE(out.on);
+  in.on = true;
+  encodeLight(in, b);
+  TEST_ASSERT_EQUAL_HEX8(LIGHT_ON, b[4]);
+}
+
+// An older phone writes four bytes. The BLE link starts from the light's settings, so the write changes brightness,
+// effect, and speed, and a light its owner turned off stays off.
+static void test_a_four_byte_write_keeps_the_light_off() {
+  Light current{};
+  current.on = false;
+  uint8_t accepted[LIGHT_MAX_SIZE];
+  encodeLight(current, accepted);
+  Light parsed{};
+  TEST_ASSERT_TRUE(parseLight(accepted, LIGHT_MAX_SIZE, parsed) == ParseResult::Ok);
+  const uint8_t older[] = {0x01, 0x40, 0x02, 0x80};
+  TEST_ASSERT_TRUE(parseLight(older, sizeof(older), parsed) == ParseResult::Ok);
+  TEST_ASSERT_EQUAL_UINT8(0x40, parsed.brightness);
+  TEST_ASSERT_EQUAL_UINT8(EFFECT_SPARKLE, parsed.effect);
+  TEST_ASSERT_FALSE(parsed.on);
 }
 
 static void test_effects_list_matches_the_published_vector() {
@@ -161,6 +189,10 @@ static void test_effects_list_matches_the_published_vector() {
   TEST_ASSERT_EQUAL_UINT(EFFECTS_VECTOR_LENGTH, length);
   TEST_ASSERT_EQUAL_UINT8_ARRAY(EFFECTS_VECTOR, b, length);
   TEST_ASSERT_EQUAL_UINT(0, encodeEffects(EFFECTS, EFFECT_COUNT, b, 10));
+  // A grid with a motion sensor adds Flow; the vector is what an S3-Matrix returned over Bluetooth on 2026-11-27.
+  const size_t motion = encodeEffects(MOTION_EFFECTS, MOTION_EFFECT_COUNT, b, sizeof(b));
+  TEST_ASSERT_EQUAL_UINT(MOTION_EFFECTS_VECTOR_LENGTH, motion);
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(MOTION_EFFECTS_VECTOR, b, motion);
 }
 
 static void test_solid_and_unknown_effects_show_the_color() {
@@ -297,6 +329,7 @@ int main() {
   RUN_TEST(test_identify_vectors);
   RUN_TEST(test_light_vectors);
   RUN_TEST(test_light_round_trips);
+  RUN_TEST(test_a_four_byte_write_keeps_the_light_off);
   RUN_TEST(test_effects_list_matches_the_published_vector);
   RUN_TEST(test_solid_and_unknown_effects_show_the_color);
   RUN_TEST(test_breathe_stays_visible_and_reaches_full);

@@ -19,8 +19,8 @@
 
 namespace cheerlights {
 
-const char FW_TEXT[] = "0.7.0";
-static_assert(FW_MAJOR == 0 && FW_MINOR == 7 && FW_PATCH == 0, "FW_TEXT matches the version");
+const char FW_TEXT[] = "0.8.0";
+static_assert(FW_MAJOR == 0 && FW_MINOR == 8 && FW_PATCH == 0, "FW_TEXT matches the version");
 
 Settings settings;
 Scene scene{};
@@ -310,6 +310,7 @@ Button mainButton{-1}, infoButton{-1};
 // and the left one shows the info card.
 void pollButtons() {
   if (pressed(mainButton)) {
+    Light next = scene.light;
     if (settings.output == Output::Screen) {
       size_t count = 0;
       const EffectInfo* effects = lightEffects(count);
@@ -317,19 +318,16 @@ void pollButtons() {
       for (size_t i = 0; i < count; i++) {
         if (effects[i].id == scene.light.effect) at = i;
       }
-      Light next = scene.light;
       next.effect = effects[(at + 1) % count].id;
-      lightChanged(next);
-      if (settings.link == Link::Wifi) {
-        wifiLightChanged(next);
-      } else {
-        bleLightChanged(next);
-      }
     } else {
-      scene.off = !scene.off;
-      prefs.putBool("off", scene.off);
-      logf("light off=%d\n", scene.off);
-      render();
+      next.on = !next.on;
+    }
+    lightChanged(next);
+    // The phone or the API reads the change, the same as one it made itself.
+    if (settings.link == Link::Wifi) {
+      wifiLightChanged(next);
+    } else {
+      bleLightChanged(next);
     }
   }
   if (pressed(infoButton)) screenInfo();
@@ -384,7 +382,7 @@ void showFrame(const Frame& frame, bool haveColor) {
   scene.haveColor = haveColor;
   render();
   logf("frame seq=%u idx=%u rgb=%02x%02x%02x age=%u stale=%d off=%d\n", frame.sequence, frame.paletteIndex, frame.r,
-       frame.g, frame.b, frame.ageMinutes, frame.stale, scene.off);
+       frame.g, frame.b, frame.ageMinutes, frame.stale, !scene.light.on);
 }
 
 void lightChanged(const Light& light) {
@@ -392,7 +390,7 @@ void lightChanged(const Light& light) {
   lightChangedAt = millis();
   lightUnsaved = true;
   render();
-  logf("light brightness=%u effect=%u speed=%u\n", light.brightness, light.effect, light.speed);
+  logf("light brightness=%u effect=%u speed=%u on=%d\n", light.brightness, light.effect, light.speed, light.on);
 }
 
 const EffectInfo* lightEffects(size_t& count) { return effectsFor(settings.output, motion, count); }
@@ -453,7 +451,6 @@ void setup() {
   makeNames();
   prefs.begin("cheerlights");
   loadSettings();
-  scene.off = prefs.getBool("off", false);  // the wearer's off choice survives a restart
   motion = startMotion();
   if (motion) {
     const Layout l = layoutOf(settings);
@@ -462,6 +459,8 @@ void setup() {
   }
   uint8_t savedLight[LIGHT_SIZE];
   if (prefs.getBytes("light", savedLight, LIGHT_SIZE) == LIGHT_SIZE) parseLight(savedLight, LIGHT_SIZE, scene.light);
+  // On and off is kept on its own, as it was before a phone could set it, so an update keeps the owner's choice.
+  scene.light.on = !prefs.getBool("off", false);
   size_t effectCount = 0;
   const EffectInfo* effects = lightEffects(effectCount);
   if (!hasEffect(effects, effectCount, scene.light.effect)) scene.light.effect = EFFECT_SOLID;
@@ -488,8 +487,8 @@ void setup() {
   } else {
     startBle();
   }
-  logf("light off=%d\n", scene.off);
-  logf("light brightness=%u effect=%u speed=%u\n", scene.light.brightness, scene.light.effect, scene.light.speed);
+  logf("light brightness=%u effect=%u speed=%u on=%d\n", scene.light.brightness, scene.light.effect, scene.light.speed,
+       scene.light.on);
   if (isSetUp(settings)) {
     logf("type help for the settings commands\n");
   } else {
@@ -504,9 +503,10 @@ void loop() {
     serviceBle();
   }
   if (lightUnsaved && millis() - lightChangedAt > SAVE_DELAY_MS) {
-    uint8_t value[LIGHT_SIZE];
+    uint8_t value[LIGHT_MAX_SIZE];
     encodeLight(scene.light, value);
-    prefs.putBytes("light", value, LIGHT_SIZE);
+    prefs.putBytes("light", value, LIGHT_SIZE);  // the stored value stays four bytes, so older firmware reads it
+    if (prefs.getBool("off", false) == scene.light.on) prefs.putBool("off", !scene.light.on);
     lightUnsaved = false;
   }
   serviceFlow();

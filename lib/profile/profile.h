@@ -48,6 +48,7 @@ constexpr uint8_t CAP_LIGHT = 0x04;        // it has Light and Effects
 constexpr uint8_t CAP_NEEDS_SETUP = 0x08;  // it is not set up, so it shows nothing until it is set up over USB
 constexpr uint8_t CAP_IDENTIFY = 0x10;     // it has Identify, so a phone can make it blink
 constexpr uint8_t CAP_TEXT = 0x20;         // it has Text, so a phone can set the words it scrolls (firmware 0.7.0)
+constexpr uint8_t CAP_ON_OFF = 0x40;       // Light's byte 4 turns it off and on (firmware 0.8.0)
 
 struct Info {
   uint8_t major, minor, patch;
@@ -55,6 +56,7 @@ struct Info {
   bool identify = false;
   const char* board = nullptr;  // null before firmware 0.5.0, which sent five bytes
   bool text = false;            // from firmware 0.7.0, on a grid that can scroll text
+  bool onOff = false;           // from firmware 0.8.0
 };
 // Returns the length written: five bytes, then the board's name when there is one, cut to INFO_BOARD_MAX bytes at
 // a whole character.
@@ -65,19 +67,24 @@ size_t encodeInfo(const Info& info, uint8_t out[INFO_MAX_SIZE]);
 constexpr uint8_t IDENTIFY_VERSION = 1;
 ParseResult parseIdentify(const uint8_t* data, size_t length);
 
-// The Light characteristic: brightness, effect, and speed, written by the phone and kept across restarts.
-constexpr size_t LIGHT_SIZE = 4;
+// The Light characteristic: brightness, effect, and speed, then from firmware 0.8.0 a flags byte whose bit 0 says the
+// light is on. Written by the phone and kept across restarts.
+constexpr size_t LIGHT_SIZE = 4;      // the fields every phone writes
+constexpr size_t LIGHT_MAX_SIZE = 5;  // the fields this firmware writes and reads
 constexpr uint8_t LIGHT_VERSION = 1;
+constexpr uint8_t LIGHT_ON = 0x01;  // flags bit 0
 
 struct Light {
   uint8_t brightness = 255;  // a share of this device's brightness cap, 1 to 255
   uint8_t effect = 0;        // an id from EFFECTS; unknown ids show solid
   uint8_t speed = 128;       // 1 to 255, slow to fast
+  bool on = true;            // false turns the LEDs or the screen off; the color and the rest are kept
 };
 
-// Zero brightness or speed reads as 1, as the profile says.
+// Zero brightness or speed reads as 1, as the profile says. A value without the flags byte leaves out.on as it was,
+// so a phone that does not know on and off never turns a light on or off; flag bits it does not know are ignored.
 ParseResult parseLight(const uint8_t* data, size_t length, Light& out);
-void encodeLight(const Light& light, uint8_t out[LIGHT_SIZE]);
+void encodeLight(const Light& light, uint8_t out[LIGHT_MAX_SIZE]);
 
 // The animations this firmware has. Entry 0 is always solid.
 enum EffectId : uint8_t {

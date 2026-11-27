@@ -137,7 +137,7 @@ static void test_scene_shows_nothing_off_alive_stale_and_fresh() {
 
   scene.frame.stale = false;
   TEST_ASSERT_TRUE(sceneMoves(scene));
-  scene.off = true;
+  scene.light.on = false;
   TEST_ASSERT_EQUAL_UINT8(0, scenePixel(grid, scene, 9).r);
   TEST_ASSERT_FALSE(sceneMoves(scene));
 }

@@ -43,6 +43,9 @@ Firmware before 0.4.0 never sets bit 3.
 Bit 4 means the light has `Identify`.
 Bit 5 means the light has `Text`: it is a grid of LEDs at least 8 by 8, which can scroll words.
 Firmware before 0.7.0 never sets bit 5.
+Bit 6 means byte 4 of `Light` turns the light off and on.
+A phone offers off and on only when bit 6 is set.
+Firmware before 0.8.0 never sets bit 6.
 
 From firmware 0.5.0, byte 5 is the length of the board's name, up to 40, and the name follows in UTF-8, such as `LilyGO T-Display, 1.14 inch screen`, or `Custom` for wiring set by hand.
 A phone shows it as what the light is.
@@ -72,7 +75,8 @@ A read of `Color` returns the last frame the light accepted.
 
 ## Light
 
-`Light` is four bytes, written by the phone and read back on connect, so the phone's controls start from what the light shows.
+`Light` is written by the phone and read back on connect, so the phone's controls start from what the light shows.
+It is four bytes, and five from firmware 0.8.0.
 The light keeps the last value across restarts.
 
 | Byte | Field | Meaning |
@@ -81,12 +85,17 @@ The light keeps the last value across restarts.
 | 1 | Brightness | 1 to 255, a share of the light's own brightness cap; 0 is treated as 1 |
 | 2 | Effect | An id from `Effects`; 0 is solid, and an unknown id shows solid |
 | 3 | Speed | 1 to 255, slow to fast, for effects that move; 0 is treated as 1 |
+| 4 | Flags | From firmware 0.8.0. Bit 0 set means the light is on; clear means it is off. Other bits are zero |
 
 Brightness is relative, so each light decides how bright 255 is, such as a low cap on a board that runs hot.
-The physical off control (bit 1) stays the way to turn the light off, and `Light` cannot turn it back on.
+Off turns the LEDs or the screen dark and keeps everything else, so the light comes back on as it was.
+A blink (`Identify`) shows even while the light is off, so its owner can find it.
+The physical off control (`Info` bit 1) and byte 4 change the same setting, so a phone that reads `Light` after a press sees it.
 Effects that show the color animate the color from the latest frame.
 A stale frame is always shown as stale, without an effect, so the wearer can trust it.
-A receiver ignores a `Light` value shorter than four bytes or with an unknown version, and reads the first four bytes of a longer one.
+A receiver ignores a `Light` value shorter than four bytes or with an unknown version, and reads the fields it knows from a longer one.
+A four-byte write leaves the light on or off as it was, so a phone that does not know byte 4 never turns a light off or on.
+A light ignores flag bits it does not know.
 
 ## Effects
 

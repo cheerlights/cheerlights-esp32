@@ -29,7 +29,7 @@ Both kinds follow three rules:
 
 - Setup happens over USB only.
   Nothing over the air changes a light's wiring, its Wi-Fi networks, or its firmware.
-- Over the air, a phone or a browser changes only what the light shows: the mode, the fun color, brightness, the animation, scrolling text, and a blink.
+- Over the air, a phone or a browser changes only what the light shows: on or off, the mode, the fun color, brightness, the animation, scrolling text, and a blink.
 - Fun mode shows a color you pick on that one light.
   It never changes the CheerLights color everyone else sees.
 

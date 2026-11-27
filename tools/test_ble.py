@@ -1,13 +1,16 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["bleak==3.1.0", "pyserial==3.5"]
+# ///
 """End-to-end check of the firmware on a board: this computer plays the phone over Bluetooth,
 reads the board's serial log to confirm each result, and drives the USB console.
 
-    python tools/test_ble.py --port COM4
-    python tools/test_ble.py --port COM4 --show ff0000 [--stale]
-    python tools/test_ble.py --port COM4 --live      (reads the public CheerLights feed once)
+    uv run tools/test_ble.py --port COM4
+    uv run tools/test_ble.py --port COM4 --show ff0000 [--stale]
+    uv run tools/test_ble.py --port COM4 --live      (reads the public CheerLights feed once)
 
 Written for an ESP32-S3 board. It changes the colors shown while it runs and puts back the brightness cap
 it changes. It only talks to the board and never sets the public CheerLights color.
-Needs: pip install bleak pyserial
 """
 import argparse
 import asyncio
@@ -32,6 +35,9 @@ UNREAD_WRITES = 60  # each logs about 28 bytes, enough to overflow the board's 1
 UNREAD_MAX_MS = 1000
 HERE = os.path.dirname(os.path.abspath(__file__))
 SPEC = os.path.join(HERE, "..", "docs")
+with open(os.path.join(HERE, "..", "src", "app.h"), encoding="utf-8") as _f:
+    FIRMWARE_PARTS = tuple(int(x) for x in re.search(r"FW_MAJOR = (\d+), FW_MINOR = (\d+), FW_PATCH = (\d+)", _f.read()).groups())
+FIRMWARE = ".".join(str(x) for x in FIRMWARE_PARTS)
 
 
 class SerialLog:
@@ -153,26 +159,35 @@ async def full_test(port):
                     {"read", "write", "write-without-response"} <= set(props), props)
             r.check("Info is read only", sorted(service.get_characteristic(INFO).properties) == ["read"])
 
-            info = await client.read_gatt_char(INFO)
-            r.check("Info is 5 bytes: protocol 1, fw 0.4.0, display, off control, and light, set up",
-                    bytes(info) == bytes([1, 0, 4, 0, 7]), bytes(info).hex())
+            info = bytes(await client.read_gatt_char(INFO))
+            r.check(f"Info: protocol 1, firmware {FIRMWARE}", info[:4] == bytes([1, *FIRMWARE_PARTS]), info.hex())
+            r.check("Info: set up, with Light, Identify, and off and on (bits 2, 4, and 6; not bit 3)",
+                    len(info) >= 5 and info[4] & 0x54 == 0x54 and not info[4] & 0x08, info.hex())
+
+            # Start on, so each vector's on or off is a change the log shows.
+            await write_and_expect(client, log, bytes.fromhex("01ff008001"), char=LIGHT, pattern=r"^light brightness")
+            on = True
 
             r.check("Light is read, write, and write without response",
                     {"read", "write", "write-without-response"} <= set(service.get_characteristic(LIGHT).properties))
             r.check("Effects is read only", sorted(service.get_characteristic(EFFECTS).properties) == ["read"])
             effects = bytes(await client.read_gatt_char(EFFECTS))
-            want_effects = bytes.fromhex(spec_vectors["effects"][0]["bytes"])
-            r.check("Effects matches the published vector, read in full", effects == want_effects, effects.hex())
+            # LEDs have one list, and a grid with a motion sensor adds Flow; the board's must be one of them.
+            published = {bytes.fromhex(v["bytes"]): v["name"] for v in spec_vectors["effects"]}
+            r.check("Effects matches a published vector, read in full", effects in published,
+                    published.get(effects, effects.hex()))
 
+            # A four-byte value leaves the light on or off as it was; a five-byte one sets it.
             for v in spec_vectors["light"]:
                 raw = bytes.fromhex(v["bytes"])
+                on = v.get("on", on)
                 line = await write_and_expect(client, log, raw, char=LIGHT, pattern=r"^light brightness")
-                want = f"light brightness={v['brightness']} effect={v['effect']} speed={v['speed']}"
+                want = f"light brightness={v['brightness']} effect={v['effect']} speed={v['speed']} on={int(on)}"
                 r.check(f"light vector: {v['name']}", line == want, line)
-                r.check("  reads back the same value", bytes(await client.read_gatt_char(LIGHT)) == raw)
+                r.check("  reads back as five bytes", bytes(await client.read_gatt_char(LIGHT)) == raw[:4] + bytes([on]))
             for v in spec_vectors["lightClamped"]:
                 line = await write_and_expect(client, log, bytes.fromhex(v["bytes"]), char=LIGHT, pattern=r"^light brightness")
-                want = f"light brightness={v['brightness']} effect={v['effect']} speed={v['speed']}"
+                want = f"light brightness={v['brightness']} effect={v['effect']} speed={v['speed']} on={int(on)}"
                 r.check(f"light clamps: {v['name']}", line == want, line)
             for v in spec_vectors["lightRejected"]:
                 line = await write_and_expect(client, log, bytes.fromhex(v["bytes"]), char=LIGHT, pattern=r"^ignored reason=light|^light brightness")
@@ -180,12 +195,13 @@ async def full_test(port):
             for v in spec_vectors["lightNewer"]:
                 raw = bytes.fromhex(v["bytes"])
                 line = await write_and_expect(client, log, raw, char=LIGHT, pattern=r"^ignored reason=light|^light brightness")
-                want = f"light brightness={v['brightness']} effect={v['effect']} speed={v['speed']}"
+                on = v.get("on", on)
+                want = f"light brightness={v['brightness']} effect={v['effect']} speed={v['speed']} on={int(on)}"
                 r.check(f"light from a newer phone: {v['name']}", line == want, line)
                 r.check("  reads back the fields this firmware knows",
-                        bytes(await client.read_gatt_char(LIGHT)) == raw[:4])
-            # Back to solid at full brightness, so the frame checks below see plain colors.
-            await write_and_expect(client, log, bytes.fromhex("01ff0080"), char=LIGHT, pattern=r"^light brightness")
+                        bytes(await client.read_gatt_char(LIGHT)) == raw[:4] + bytes([on]))
+            # Back to solid, on, at full brightness, so the frame checks below see plain colors.
+            await write_and_expect(client, log, bytes.fromhex("01ff008001"), char=LIGHT, pattern=r"^light brightness")
 
             for v in vectors:
                 raw = bytes.fromhex(v["bytes"])

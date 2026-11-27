@@ -1,4 +1,4 @@
-// The page a Wi-Fi light serves at /: which light this is (with Blink), the color it shows, Fun or CheerLights mode,
+// The page a Wi-Fi light serves at /: which light this is (with Blink), the color it shows, on or off, Fun or CheerLights mode,
 // the fun palette and any color, its animations, speed for LED lights, brightness, and scrolling text on a grid.
 // It uses the same API as the app (docs/wifi.md), loads nothing from the internet, and must stay one document
 // small enough for flash (about 20 KB). The literal must never contain the closing delimiter.
@@ -117,6 +117,10 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:56px;align-items
 <div class="side">
 <fieldset class="ctl" id="ctl" disabled>
 <fieldset>
+<legend>Light</legend>
+<div class="seg"><label><input class="r" type="radio" name="pw" value="1"><span>On</span></label><label><input class="r" type="radio" name="pw" value="0"><span>Off</span></label></div>
+</fieldset>
+<fieldset>
 <legend>Mode</legend>
 <div class="seg"><label><input class="r" type="radio" name="mode" value="fun" aria-describedby="modehint"><span>Fun</span></label><label><input class="r" type="radio" name="mode" value="cheerlights" aria-describedby="modehint"><span>CheerLights</span></label></div>
 <p class="hint" id="modehint">Fun mode changes only this light. The CheerLights color everyone shares stays as it is.</p>
@@ -199,11 +203,14 @@ function render(){
  else line="This light is waiting for its first CheerLights color.";
  const shown=fun?S.fun.hex:cl?cl.hex:null;
  if(shown&&nameOf(shown))line+=" Its hex code is "+shown.toUpperCase()+".";
+ const off=S.on===false;
+ if(off){hex=null;name="Off";line="This light is off. Turn it on to show "+(fun?"your fun color":"the CheerLights color")+" again.";}
  const f=$("field");
  f.style.background=hex||"";f.style.color=hex?inkFor(hex):"";f.style.setProperty("--fc",hex||"var(--surface)");
  $("cname").textContent=name;$("cline").textContent=line;
  $("tc").content=hex||getComputedStyle(document.body).backgroundColor;
  $("fav").href="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="'+(hex||"#c4c7c0")+'" stroke="#16181b"/></svg>');
+ for(const r of N("pw"))r.checked=(r.value==="1")!==off;
  for(const r of N("mode"))r.checked=r.value===S.mode;
  $("fun").hidden=!fun;
  const pal=nameOf(S.fun.hex);
@@ -247,6 +254,7 @@ function lost(){
 }
 for(const [n,h] of PALETTE){const l=E("label"),r=E("input"),i=E("i"),s=E("span");
  l.className="bulb";r.type="radio";r.name="fun";r.className="r";r.value=h;r.onchange=()=>send({fun:{hex:h}});i.style.setProperty("--c",h);s.textContent=n;l.append(r,i,s);$("bulbs").insertBefore(l,$("pick"));}
+for(const r of N("pw"))r.onchange=()=>send({on:r.value==="1"});
 for(const r of N("mode"))r.onchange=()=>send({mode:r.value});
 $("any").oninput=e=>{holdP=Date.now();clearTimeout(tP);tP=setTimeout(()=>send({fun:{hex:e.target.value}}),150);};
 $("bright").oninput=e=>{holdB=Date.now();$("bv").textContent=pct(e.target.value);clearTimeout(tB);tB=setTimeout(()=>send({brightness:+e.target.value}),150);};

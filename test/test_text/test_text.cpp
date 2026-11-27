@@ -311,9 +311,9 @@ static void test_text_scrolls_over_the_color_only_on_a_grid_that_can_show_it() {
   show.text.on = false;
   TEST_ASSERT_FALSE(textShowing(matrix, scene));
   show.text.on = true;
-  scene.off = true;
+  scene.light.on = false;
   TEST_ASSERT_FALSE(textShowing(matrix, scene));
-  scene.off = false;
+  scene.light.on = true;
   scene.haveColor = false;
   TEST_ASSERT_FALSE(textShowing(matrix, scene));
   scene.haveColor = true;

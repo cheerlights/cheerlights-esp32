@@ -27,15 +27,16 @@ Each build also writes the merged image for its chip to `release/`, through `too
 
 ```bash
 pio run -e esp32s3 -t upload --upload-port COM4
-pip install bleak pyserial
-python tools/test_ble.py --port COM4
+uv run tools/test_ble.py --port COM4
 ```
+
+[uv](https://docs.astral.sh/uv/) reads the script's own list of packages and installs them for it.
 
 `test_ble.py` acts as the phone over Bluetooth, reads the board's serial log to confirm each result, and drives the USB console.
 It is written for an ESP32-S3 board that is set up and set to Bluetooth, and reads the pin and brightness cap from `show`.
 It changes the colors shown while it runs, and puts back the one setting it saves.
 
-`python tools/test_ble.py --port COM4 --show ff0000` sends one color.
+`uv run tools/test_ble.py --port COM4 --show ff0000` sends one color.
 `--live` sends the current CheerLights color, read once from the public feed.
 
 ## The install page

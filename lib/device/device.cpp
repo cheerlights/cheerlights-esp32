@@ -263,7 +263,7 @@ Rgb8 colorPixel(const Settings& s, const Scene& scene, int index, int x, int y, 
 }  // namespace
 
 Rgb8 scenePixel(const Settings& s, const Scene& scene, int index) {
-  if (scene.off) return {0, 0, 0};
+  if (!scene.light.on) return {0, 0, 0};
   if (!scene.haveColor) return index == alivePixel(s) ? Rgb8{40, 40, 40} : Rgb8{0, 0, 0};
   const Layout l = layoutOf(s);
   int x, y;
@@ -285,12 +285,12 @@ Rgb8 scenePixel(const Settings& s, const Scene& scene, int index) {
 }
 
 bool sceneMoves(const Scene& scene) {
-  return scene.haveColor && !scene.off && !scene.frame.stale && effectMoves(scene.light.effect);
+  return scene.haveColor && scene.light.on && !scene.frame.stale && effectMoves(scene.light.effect);
 }
 
 bool textShowing(const Settings& s, const Scene& scene) {
   return scene.text != nullptr && scene.text->text.on && scene.text->text.message[0] != '\0' && scene.haveColor &&
-         !scene.off && canScroll(s);
+         scene.light.on && canScroll(s);
 }
 
 bool sceneMoves(const Settings& s, const Scene& scene) { return sceneMoves(scene) || textShowing(s, scene); }

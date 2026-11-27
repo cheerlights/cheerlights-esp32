@@ -232,7 +232,7 @@ static void test_api_info_and_state_have_the_documented_fields() {
   LightState s;
   CheerLightsState cl;
   TEST_ASSERT_TRUE(writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, sizeof(out)) > 0);
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"mode\":\"cheerlights\""));
+  TEST_ASSERT_NOT_NULL(strstr(out, "{\"on\":true,\"mode\":\"cheerlights\""));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"cheerlights\":null"));  // before the first color
   cl = {true, {0xff, 0xa5, 0x00}, true};
   writeState(s, cl, EFFECTS, EFFECT_COUNT, false, out, sizeof(out));
@@ -260,14 +260,25 @@ static void test_api_changes_apply_all_or_nothing_and_keep_cheerlights_mode_hone
                           "{\"fun\":{\"hex\":\"ff0000\"}}", "{\"fun\":{\"hex\":\"#ff00\"}}",
                           "{\"brightness\":0}", "{\"brightness\":256}", "{\"brightness\":2.5}", "{\"speed\":\"fast\"}",
                           "{\"effect\":9}", "{\"effect\":-1}", "{\"brightness\":10,\"effect\":99}",
-                          "{\"mode\":\"cheerlights\",\"effect\":4}"}) {
+                          "{\"mode\":\"cheerlights\",\"effect\":4}", "{\"on\":1}", "{\"on\":\"false\"}",
+                          "{\"on\":false,\"brightness\":0}"}) {
     LightState t = s;
     TEST_ASSERT_NOT_NULL_MESSAGE(post(bad, t), bad);
     TEST_ASSERT_TRUE_MESSAGE(t.fun == before.fun && t.funColor == before.funColor &&
                                  t.light.brightness == before.light.brightness && t.light.effect == before.light.effect &&
-                                 t.light.speed == before.light.speed,
+                                 t.light.speed == before.light.speed && t.light.on == before.light.on,
                              bad);
   }
+
+  // Off and on change only that: the mode, the colors, and the animation are kept for when it comes back on.
+  TEST_ASSERT_NULL(post("{\"on\":false}", s));
+  TEST_ASSERT_FALSE(s.light.on);
+  TEST_ASSERT_TRUE(s.fun && s.light.effect == EFFECT_RAINBOW && s.light.brightness == 80);
+  char out[STATE_JSON_SIZE];
+  writeState(s, CheerLightsState{}, EFFECTS, EFFECT_COUNT, false, out, sizeof(out));
+  TEST_ASSERT_NOT_NULL(strstr(out, "{\"on\":false,\"mode\":\"fun\""));
+  TEST_ASSERT_NULL(post("{\"on\":true}", s));
+  TEST_ASSERT_TRUE(s.light.on);
 
   // Back to CheerLights with a rainbow playing turns the light solid, so it shows the CheerLights color.
   TEST_ASSERT_NULL(post("{\"mode\":\"cheerlights\"}", s));

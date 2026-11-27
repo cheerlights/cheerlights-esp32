@@ -113,8 +113,7 @@ struct TextShow {
 struct Scene {
   bool haveColor;
   Frame frame;
-  bool off;
-  Light light;
+  Light light;  // light.on false shows nothing
   uint32_t ms;
   const TextShow* text = nullptr;  // scrolls over the color while it is on, on a light that can show it
   const Flow* flow = nullptr;      // the liquid Flow shows, on a grid with a motion sensor

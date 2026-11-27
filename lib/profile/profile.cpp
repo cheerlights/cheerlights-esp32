@@ -45,14 +45,16 @@ ParseResult parseLight(const uint8_t* data, size_t length, Light& out) {
   out.brightness = data[1] == 0 ? 1 : data[1];
   out.effect = data[2];
   out.speed = data[3] == 0 ? 1 : data[3];
+  if (length >= LIGHT_MAX_SIZE) out.on = (data[4] & LIGHT_ON) != 0;
   return ParseResult::Ok;
 }
 
-void encodeLight(const Light& light, uint8_t out[LIGHT_SIZE]) {
+void encodeLight(const Light& light, uint8_t out[LIGHT_MAX_SIZE]) {
   out[0] = LIGHT_VERSION;
   out[1] = light.brightness == 0 ? 1 : light.brightness;
   out[2] = light.effect;
   out[3] = light.speed == 0 ? 1 : light.speed;
+  out[4] = light.on ? LIGHT_ON : 0;
 }
 
 size_t encodeInfo(const Info& info, uint8_t out[INFO_MAX_SIZE]) {
@@ -62,7 +64,7 @@ size_t encodeInfo(const Info& info, uint8_t out[INFO_MAX_SIZE]) {
   out[3] = info.patch;
   out[4] = (info.display ? CAP_DISPLAY : 0) | (info.offControl ? CAP_OFF_CONTROL : 0) | (info.light ? CAP_LIGHT : 0) |
            (info.needsSetup ? CAP_NEEDS_SETUP : 0) | (info.identify ? CAP_IDENTIFY : 0) |
-           (info.text ? CAP_TEXT : 0);
+           (info.text ? CAP_TEXT : 0) | (info.onOff ? CAP_ON_OFF : 0);
   if (info.board == nullptr) return INFO_SIZE;
   size_t n = strlen(info.board);
   if (n > INFO_BOARD_MAX) {

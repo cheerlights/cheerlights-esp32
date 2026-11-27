@@ -114,6 +114,20 @@
       "text": true,
       "board": "Waveshare ESP32-S3-Matrix, 8x8",
       "bytes": "01000700371e5761766573686172652045535033322d53332d4d61747269782c20387838"
+    },
+    {
+      "name": "firmware 0.8.0 on a grid, turned off and on over the air",
+      "protocol": 1,
+      "firmware": "0.8.0",
+      "display": true,
+      "offControl": true,
+      "light": true,
+      "needsSetup": false,
+      "identify": true,
+      "text": true,
+      "onOff": true,
+      "board": "Waveshare ESP32-S3-Matrix, 8x8",
+      "bytes": "01000800771e5761766573686172652045535033322d53332d4d61747269782c20387838"
     }
   ],
   "infoNewer": [
@@ -126,7 +140,7 @@
       "light": true,
       "identify": true,
       "board": "Matrix",
-      "bytes": "0100090057064d61747269782a"
+      "bytes": "0100090097064d61747269782a"
     },
     {
       "name": "a board name cut short, read as no board",
@@ -160,15 +174,32 @@
       "effect": 1,
       "speed": 1,
       "bytes": "01010101"
+    },
+    {
+      "name": "full brightness, solid, middle speed, on",
+      "brightness": 255,
+      "effect": 0,
+      "speed": 128,
+      "on": true,
+      "bytes": "01ff008001"
+    },
+    {
+      "name": "dim breathe, slowest, off",
+      "brightness": 1,
+      "effect": 1,
+      "speed": 1,
+      "on": false,
+      "bytes": "0101010100"
     }
   ],
   "lightNewer": [
     {
-      "name": "dim breathe from a newer phone, one byte longer",
+      "name": "dim breathe and on from a newer phone, with flag bits this reader does not know and one byte longer",
       "brightness": 1,
       "effect": 1,
       "speed": 1,
-      "bytes": "0101010107"
+      "on": true,
+      "bytes": "0101010107ab"
     }
   ],
   "lightRejected": [
@@ -221,6 +252,42 @@
         }
       ],
       "bytes": "030508000105536f6c69640a010107427265617468650a020107537061726b6c6509030106526970706c650a0400075261696e626f77"
+    },
+    {
+      "name": "firmware 0.6.0 on a grid with a motion sensor, which adds Flow",
+      "entries": [
+        {
+          "id": 0,
+          "flags": 1,
+          "name": "Solid"
+        },
+        {
+          "id": 1,
+          "flags": 1,
+          "name": "Breathe"
+        },
+        {
+          "id": 2,
+          "flags": 1,
+          "name": "Sparkle"
+        },
+        {
+          "id": 3,
+          "flags": 1,
+          "name": "Ripple"
+        },
+        {
+          "id": 4,
+          "flags": 0,
+          "name": "Rainbow"
+        },
+        {
+          "id": 7,
+          "flags": 1,
+          "name": "Flow"
+        }
+      ],
+      "bytes": "030608000105536f6c69640a010107427265617468650a020107537061726b6c6509030106526970706c650a0400075261696e626f7707070104466c6f77"
     }
   ],
   "effectsNewer": [

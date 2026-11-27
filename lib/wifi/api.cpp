@@ -61,6 +61,7 @@ size_t writeInfo(const DeviceInfo& info, char* out, size_t size) {
 size_t writeState(const LightState& state, const CheerLightsState& cheerlights, const EffectInfo* effects,
                   size_t effectCount, bool scrolls, char* out, size_t size) {
   JsonDocument doc;
+  doc["on"] = state.light.on;
   doc["mode"] = state.fun ? "fun" : "cheerlights";
   char hex[8];
   if (cheerlights.have) {
@@ -114,6 +115,11 @@ const char* applyState(const char* body, size_t length, const EffectInfo* effect
   if (!doc.is<JsonObject>()) return "The body is a JSON object.";
   LightState next = state;
 
+  JsonVariantConst on = doc["on"];
+  if (!on.isNull()) {
+    if (!on.is<bool>()) return "on is true or false.";
+    next.light.on = on.as<bool>();
+  }
   JsonVariantConst mode = doc["mode"];
   if (!mode.isNull()) {
     const char* m = mode.is<const char*>() ? mode.as<const char*>() : "";

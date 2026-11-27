@@ -60,20 +60,22 @@ class ColorCallbacks : public NimBLECharacteristicCallbacks {
 
 class LightCallbacks : public NimBLECharacteristicCallbacks {
  public:
-  uint8_t accepted[LIGHT_SIZE] = {};
+  uint8_t accepted[LIGHT_MAX_SIZE] = {};
 
  private:
   void onWrite(NimBLECharacteristic* c, NimBLEConnInfo&) override {
     const NimBLEAttValue value = c->getValue();
+    // Start from the settings in use, so a four-byte write from an older phone keeps the light on or off as it is.
     Light parsed{};
+    parseLight(accepted, LIGHT_MAX_SIZE, parsed);
     if (parseLight(value.data(), value.length(), parsed) != ParseResult::Ok) {
       logf("ignored reason=light len=%u\n", static_cast<unsigned>(value.length()));
       // A read keeps returning the settings in use.
-      c->setValue(accepted, LIGHT_SIZE);
+      c->setValue(accepted, LIGHT_MAX_SIZE);
       return;
     }
     encodeLight(parsed, accepted);  // zero brightness or speed reads back as 1
-    c->setValue(accepted, LIGHT_SIZE);
+    c->setValue(accepted, LIGHT_MAX_SIZE);
     portENTER_CRITICAL(&pendingLock);
     pendingLight = parsed;
     lightPending = true;
@@ -166,14 +168,15 @@ void startBle() {
   NimBLECharacteristic* info = service->createCharacteristic(INFO_UUID, NIMBLE_PROPERTY::READ);
   uint8_t infoValue[INFO_MAX_SIZE];
   const size_t infoLength =
-      encodeInfo({FW_MAJOR, FW_MINOR, FW_PATCH, setUp, offControl, true, !setUp, true, boardName(settings, CL_CHIP), scrolls},
+      encodeInfo({FW_MAJOR, FW_MINOR, FW_PATCH, setUp, offControl, true, !setUp, true, boardName(settings, CL_CHIP), scrolls,
+                  true},
                  infoValue);
   info->setValue(infoValue, infoLength);
 
   lightCharacteristic = service->createCharacteristic(
       LIGHT_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   encodeLight(scene.light, lightCallbacks.accepted);
-  lightCharacteristic->setValue(lightCallbacks.accepted, LIGHT_SIZE);
+  lightCharacteristic->setValue(lightCallbacks.accepted, LIGHT_MAX_SIZE);
   lightCharacteristic->setCallbacks(&lightCallbacks);
 
   size_t effectCount = 0;
@@ -209,7 +212,7 @@ void startBle() {
 void bleLightChanged(const Light& light) {
   if (lightCharacteristic == nullptr) return;
   encodeLight(light, lightCallbacks.accepted);
-  lightCharacteristic->setValue(lightCallbacks.accepted, LIGHT_SIZE);
+  lightCharacteristic->setValue(lightCallbacks.accepted, LIGHT_MAX_SIZE);
 }
 
 void bleTextChanged(const ScrollText& text) {

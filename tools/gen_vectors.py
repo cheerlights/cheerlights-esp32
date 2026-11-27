@@ -56,24 +56,26 @@ for v in spec["frameNewer"]:
 lines += ["};", ""]
 
 lines += [
-    "struct LightVector { const char* name; uint8_t bytes[16]; uint8_t length; uint8_t brightness, effect, speed; };",
+    # on is -1 for a value without the flags byte, which leaves the light on or off as it was.
+    "struct LightVector { const char* name; uint8_t bytes[16]; uint8_t length; uint8_t brightness, effect, speed; int8_t on; };",
     "static const LightVector LIGHT_VECTORS[] = {",
 ]
 for v in spec["light"] + spec["lightClamped"] + spec["lightNewer"]:
     raw = bytes.fromhex(v["bytes"])
-    lines.append(f'  {{"{v["name"]}", {{{arr(raw)}}}, {len(raw)}, {v["brightness"]}, {v["effect"]}, {v["speed"]}}},')
+    on = -1 if "on" not in v else int(v["on"])
+    lines.append(f'  {{"{v["name"]}", {{{arr(raw)}}}, {len(raw)}, {v["brightness"]}, {v["effect"]}, {v["speed"]}, {on}}},')
 lines += ["};", "static const LightVector LIGHT_REJECTED[] = {"]
 for v in spec["lightRejected"]:
     raw = bytes.fromhex(v["bytes"])
     padded = raw + bytes(16 - len(raw))
-    lines.append(f'  {{"{v["name"]}", {{{arr(padded)}}}, {len(raw)}, 0, 0, 0}},')
+    lines.append(f'  {{"{v["name"]}", {{{arr(padded)}}}, {len(raw)}, 0, 0, 0, -1}},')
 lines += ["};", ""]
 
 # Info as each firmware writes it. needsSetup is absent before 0.4.0, and identify and the board before 0.5.0.
 lines += [
     "struct InfoVector {",
     "  const char* name; uint8_t bytes[64]; unsigned length; uint8_t major, minor, patch;",
-    "  bool display, offControl, light, needsSetup, identify; const char* board; bool text;",
+    "  bool display, offControl, light, needsSetup, identify; const char* board; bool text; bool onOff;",
     "};",
     "static const InfoVector INFO_VECTORS[] = {",
 ]
@@ -85,7 +87,8 @@ for v in spec["info"]:
     board = '"' + v["board"] + '"' if "board" in v else "nullptr"
     lines.append(
         f'  {{"{v["name"]}", {{{arr(raw)}}}, {len(raw)}, {major}, {minor}, {patch}, '
-        f'{", ".join(str(f).lower() for f in flags)}, {board}, {str(v.get("text", False)).lower()}}},'
+        f'{", ".join(str(f).lower() for f in flags)}, {board}, {str(v.get("text", False)).lower()}, '
+        f'{str(v.get("onOff", False)).lower()}}},'
     )
 lines += ["};"]
 lines += ["struct IdentifyVector { const char* name; uint8_t bytes[4]; unsigned length; bool ok; };",
@@ -137,9 +140,12 @@ newer = spec["textNewer"][0]
 lines += ["};", f'static const uint8_t TEXT_NEWER[] = {{{arr(bytes.fromhex(newer["bytes"]))}}};',
           f'static const unsigned TEXT_NEWER_LENGTH = {len(bytes.fromhex(newer["bytes"]))};', ""]
 effects = bytes.fromhex(spec["effects"][0]["bytes"])
+motion = bytes.fromhex(spec["effects"][1]["bytes"])
 lines += [
     f"static const uint8_t EFFECTS_VECTOR[] = {{{arr(effects)}}};",
     f"static const unsigned EFFECTS_VECTOR_LENGTH = {len(effects)};",
+    f"static const uint8_t MOTION_EFFECTS_VECTOR[] = {{{arr(motion)}}};",
+    f"static const unsigned MOTION_EFFECTS_VECTOR_LENGTH = {len(motion)};",
     "",
 ]
 out = os.path.join(root, "test", "test_profile", "vectors.h")

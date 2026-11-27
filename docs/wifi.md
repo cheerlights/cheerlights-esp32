@@ -35,7 +35,7 @@ The ESP32-H2 has no Wi-Fi, so it is Bluetooth only.
 ## API, version 1
 
 Plain HTTP on port 80, with JSON bodies in UTF-8.
-There is no authentication, so, as with Bluetooth, everything the API changes is the light: its mode, colors, brightness, animation, and scrolling text.
+There is no authentication, so, as with Bluetooth, everything the API changes is the light: on or off, its mode, colors, brightness, animation, and scrolling text.
 Wiring and Wi-Fi are set over USB only.
 
 Clients ignore fields they do not know, and the light ignores request fields it does not know, so either side can be newer.
@@ -60,6 +60,7 @@ Clients ignore fields they do not know, and the light ignores request fields it 
 
 ```json
 {
+  "on": true,
   "mode": "cheerlights",
   "cheerlights": { "name": "orange", "hex": "#ffa500", "live": true },
   "fun": { "hex": "#ff00ff" },
@@ -77,6 +78,7 @@ Clients ignore fields they do not know, and the light ignores request fields it 
 
 | Field | Meaning |
 |---|---|
+| `on` | From firmware 0.8.0. `false` turns the LEDs or the screen dark and keeps everything else, so the light comes back on as it was. The light's button, where it has one, changes the same setting. Offer off and on only when the field is there |
 | `mode` | `cheerlights` follows the CheerLights color; `fun` shows the fun color |
 | `cheerlights` | The last CheerLights color received; `null` before the first one. `live` is false while Wi-Fi or MQTT is lost, and the light then shows the color dimmed, as a stale Bluetooth frame is |
 | `fun.hex` | The color fun mode shows, kept while the light follows CheerLights |
@@ -93,7 +95,7 @@ Clients ignore fields they do not know, and the light ignores request fields it 
 
 ### `POST /api/v1/state`
 
-The body is any subset of the writable fields: `mode`, `fun`, `brightness`, `effect`, `speed`, and `text`.
+The body is any subset of the writable fields: `on`, `mode`, `fun`, `brightness`, `effect`, `speed`, and `text`.
 `text` takes any subset of `message`, `on`, `color`, `speed`, and `turn`.
 
 ```json
@@ -110,7 +112,8 @@ It answers `200` with the full state, or `400` with `{ "error": "..." }` and no 
 
 - An effect without `showsColor` is refused in CheerLights mode, and switching to CheerLights mode with one playing turns the light solid, so the light always shows the CheerLights color in that mode.
 - A fun color that is a palette color shows as that color's LED value, the same as one from the phone.
-- The light keeps the mode, fun color, brightness, effect, speed, and text across restarts.
+- The light keeps on or off, the mode, fun color, brightness, effect, speed, and text across restarts.
+- A blink (`POST /api/v1/identify`) shows even while the light is off.
 - The light turns a phone keyboard's curly quotes, dashes, ellipsis, and accented letters into their plain forms, so `Don’t` is kept as `Don't`.
   Any other character, such as an emoji, is refused, as is a message longer than 64 characters after that conversion.
 - New words, turning text on, or a new text speed restarts the scroll at the right edge, so the message reads from its first letter.

@@ -11,7 +11,7 @@
 
 namespace cheerlights {
 
-constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 7, FW_PATCH = 0;
+constexpr uint8_t FW_MAJOR = 0, FW_MINOR = 8, FW_PATCH = 0;
 extern const char FW_TEXT[];
 
 // The setup page, short enough to read off a screen.

@@ -220,7 +220,7 @@ void handlePost() {
          state.funColor.b);
   }
   if (state.light.brightness != before.light.brightness || state.light.effect != before.light.effect ||
-      state.light.speed != before.light.speed) {
+      state.light.speed != before.light.speed || state.light.on != before.light.on) {
     lightChanged(state.light);
   }
   if (state.text != before.text) textChanged(state.text);
