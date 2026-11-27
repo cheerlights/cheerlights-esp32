@@ -4,7 +4,7 @@ Firmware that makes an ESP32 board with LEDs, or a LilyGO T-Display with its scr
 
 [![Release](https://img.shields.io/github/v/release/cheerlights/cheerlights-esp32)](https://github.com/cheerlights/cheerlights-esp32/releases) [![Chips](https://img.shields.io/badge/chips-ESP32%20%7C%20S3%20%7C%20C3%20%7C%20C5%20%7C%20C6%20%7C%20H2-blue)](docs/flash.md) [![CI](https://github.com/cheerlights/cheerlights-esp32/actions/workflows/ci.yml/badge.svg)](https://github.com/cheerlights/cheerlights-esp32/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-[CheerLights](https://cheerlights.com) is a global network of lights that all show the same color, set by anyone on the [CheerLights Discord](https://cheerlights.com/discord).
+[CheerLights](https://cheerlights.com) is a global network of lights that all show the same color, set by anyone on the [CheerLights Discord](https://cheerlights.com/discord) or on [Bluesky](https://bsky.app/profile/cheerlights.bsky.social).
 This firmware makes one of those lights from an ESP32, ESP32-S3, C3, C5, C6, or H2 board.
 Flash it, tell it over USB what is wired where, and choose how it gets the color.
 On Wi-Fi, the light gets the color itself and needs no phone.
