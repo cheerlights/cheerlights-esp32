@@ -4,6 +4,7 @@ A light set to Wi-Fi gets the CheerLights color itself, over MQTT, and needs no 
 The CheerLights app, or anything else on the same network, finds it with mDNS and changes its light over a small HTTP API.
 A browser on the same network can do the same at the light's address, such as `http://cheerlights-6b70.local/`, which serves a page with the color, the mode, the palette, the animations, brightness, and, on a grid of LEDs, scrolling text.
 A light set to Bluetooth works as in [ble-profile.md](ble-profile.md) instead; a light is one or the other, chosen at setup.
+[How it fits together](how-it-works.md#a-wi-fi-light) shows the order of events, from joining the network to the app's first request.
 
 ## Setup
 

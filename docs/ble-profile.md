@@ -3,6 +3,7 @@
 This page specifies how a phone sends the CheerLights color to a light over Bluetooth Low Energy.
 This firmware implements the profile, and the CheerLights app for Android speaks it.
 A light that follows this page works with the app.
+[How it fits together](how-it-works.md#a-bluetooth-light) shows the order of events, from the first advertisement to each color change.
 
 This page describes protocol version 1.
 The UUIDs below are fixed for version 1.

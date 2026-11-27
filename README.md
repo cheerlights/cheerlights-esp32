@@ -92,6 +92,7 @@ Some status lines between these are left out.
 
 ## Documentation
 
+- [How it fits together](docs/how-it-works.md): where the color comes from, and how the app finds and controls Wi-Fi and Bluetooth lights.
 - [Flash the firmware](docs/flash.md): the file for each chip, the browser flasher, esptool, and updating.
 - [Set up your board](docs/configure.md): presets, wiring your own LEDs, Wi-Fi, the console commands, and power.
 - [Wi-Fi lights](docs/wifi.md): how a light joins, mDNS, and the local HTTP API.
